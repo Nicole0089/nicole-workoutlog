@@ -565,10 +565,20 @@ function saveOtherLog(date, activities, note){
   // 唯一的 otherLogs 寫入函數，先刪同日再寫入，保證每天只有一筆
   S.otherLogs=S.otherLogs.filter(function(l){return l.date!==date;});
   if(activities&&activities.length>0){
-    S.otherLogs.push({date:date,activities:activities,note:note||""});
+    // 確保 activities 格式正確
+    var cleanActs=activities.map(function(a){
+      if(typeof a==="string")return{id:a,count:1};
+      return{id:a.id,count:parseInt(a.count,10)||1};
+    });
+    S.otherLogs.push({date:date,activities:cleanActs,note:note||""});
     S.otherLogs.sort(function(a,b){return a.date.localeCompare(b.date);});
   }
   lsSet("other_logs",S.otherLogs);
+  // 確認寫入成功
+  var verify=S.otherLogs.filter(function(l){return l.date===date;})[0];
+  if(activities&&activities.length>0&&!verify){
+    console.error("saveOtherLog: write failed for "+date);
+  }
 }
 
 function syncOtherLog(){
@@ -1018,16 +1028,16 @@ function renderMassage(){
     if(!S.showMassageHistory){return card;}
     var list=el("div",{style:{marginTop:"4px"}});
     recent.forEach(function(l){
-      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}});
-      var left=el("div",{});
+      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
+      var left=el("div",{style:{flex:1,minWidth:0}});
       left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"4px"}},l.date));
       var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
       l.tools.forEach(function(id){var t=MASSAGE.filter(function(x){return x.id===id;})[0];if(t)tags.appendChild(el("span",{style:{background:"#f5f3ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:"6px",padding:"1px 8px",fontSize:"12px"}},t.emoji+" "+t.label));});
       left.appendChild(tags);
       if(l.note)left.appendChild(el("div",{style:{fontSize:"11px",marginTop:"4px",background:"#fafafa",borderRadius:"6px",padding:"2px 8px"}},"📝 "+l.note));
       var btns=el("div",{style:{display:"flex",gap:"6px",flexShrink:0,marginLeft:"8px"}});
-      btns.appendChild(el("button",{style:{fontSize:"11px",color:"#2563eb",background:"none",border:"none"},onclick:function(){S.mDate=l.date;S.mSel=l.tools.slice();S.mNote=l.note||"";S.editMDate=l.date;S.showMassage=true;render();}},"✏️"));
-      btns.appendChild(el("button",{style:{fontSize:"11px",color:"#ef4444",background:"none",border:"none"},onclick:function(){S.massageLogs=S.massageLogs.filter(function(x){return x.date!==l.date;});persist();render();}},"🗑"));
+      btns.appendChild(el("button",{style:{fontSize:"12px",color:"#2563eb",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"6px",padding:"3px 8px"},onclick:function(){S.mDate=l.date;S.mSel=l.tools.slice();S.mNote=l.note||"";S.mDuration=l.duration?String(l.duration):"";S.mBodyParts=(l.bodyParts||[]).slice();S.mTension=l.tension||0;S.editMDate=l.date;S.showMassage=true;render();}},"✏️ 編輯"));
+      btns.appendChild(el("button",{style:{fontSize:"12px",color:"#ef4444",background:"#fff1f2",border:"1px solid #fecdd3",borderRadius:"6px",padding:"3px 8px"},onclick:function(){if(!confirm("確定刪除"+l.date+"的按摩記錄？"))return;S.massageLogs=S.massageLogs.filter(function(x){return x.date!==l.date;});persist();render();}},"🗑 刪除"));
       row.appendChild(left);row.appendChild(btns);
       list.appendChild(row);
     });
@@ -1041,19 +1051,7 @@ function renderOtherStats(allActs){
   var card=el("div",{cls:"card"});
   var hRow=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}});
   hRow.appendChild(el("div",{style:{fontWeight:700,fontSize:"14px"}},"📊 月統計"));
-  hRow.appendChild(el("button",{style:{fontSize:"11px",color:"#6b7280",background:"#f3f4f6",border:"none",borderRadius:"6px",padding:"3px 8px",cursor:"pointer"},onclick:function(){
-    var thisMonth=S.otherLogs.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
-    var msg="本月otherLogs("+thisMonth.length+"筆):\n";
-    thisMonth.forEach(function(l){
-      msg+=l.date+": ";
-      (l.activities||[]).forEach(function(a){
-        msg+=(typeof a==="object"?a.id+"x"+a.count:a+"x1")+" ";
-      });
-      if(l.note)msg+="["+l.note+"]";
-      msg+="\n";
-    });
-    alert(msg);
-  }},"🔍 診斷"));
+
   var mi=el("input",{type:"month",cls:"inp",style:{width:"auto",fontSize:"12px",padding:"4px 8px"},value:S.oStatsMonth,onchange:function(e){S.oStatsMonth=e.target.value;render();}});
   hRow.appendChild(mi);card.appendChild(hRow);
 
@@ -1070,20 +1068,21 @@ function renderOtherStats(allActs){
     {label:"🎓 教練課",  color:"#7c3aed",cnt:wtCoach},
   ];
 
-  var allItems=wtItems.concat(allActs.map(function(a){return{label:a.emoji+" "+a.label,color:a.color,cnt:S.otherLogs.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0&&l.activities.some(function(x){return(typeof x==="object"?x.id:x)===a.id;});
-      }).reduce(function(total,l){
-        var item=l.activities.filter(function(x){return(typeof x==="object"?x.id:x)===a.id;})[0];
-        var itemCount=0;
-        if(item){
-          if(typeof item==="object"){
-            itemCount=parseInt(item.count,10);
-            if(isNaN(itemCount)||itemCount<1)itemCount=1;
-          } else {
-            itemCount=1;
-          }
-        }
-        return total+itemCount;
-      },0)};}));
+  // 計算各運動當月總次數
+  var allItems=wtItems.concat(allActs.map(function(a){
+    var total=0;
+    S.otherLogs.forEach(function(l){
+      if(l.date.indexOf(S.oStatsMonth)!==0)return;
+      (l.activities||[]).forEach(function(x){
+        var xid=typeof x==="object"?x.id:x;
+        if(xid!==a.id)return;
+        var xc=typeof x==="object"?x.count:1;
+        var n=parseInt(xc,10);
+        total+=(!isNaN(n)&&n>0)?n:1;
+      });
+    });
+    return{label:a.emoji+" "+a.label,color:a.color,cnt:total};
+  }));
   // 加入按摩修復工具統計
   var massageItems=getMassage().map(function(m){return{
     label:m.emoji+" "+m.label,
