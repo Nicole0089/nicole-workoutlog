@@ -762,8 +762,8 @@ function renderOther(){
     if(S.showOtherHistory)recentCard.appendChild(el("div",{cls:"empty"},"尚無記錄"));
   } else if(S.showOtherHistory) {
     recentLogs.forEach(function(l){
-      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}});
-      var left=el("div",{style:{flex:1}});
+      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
+      var left=el("div",{style:{flex:1,minWidth:0,overflow:"hidden"}});
       left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",fontWeight:600,marginBottom:"4px"}},l.date));
       var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
       l.activities.forEach(function(item){
@@ -777,7 +777,7 @@ function renderOther(){
       });
       left.appendChild(tags);
       // 顯示備註
-      if(l.note)left.appendChild(el("div",{style:{fontSize:"12px",color:"#92400e",background:"#fffbeb",borderRadius:"6px",padding:"3px 8px",marginTop:"5px"}},"📝 "+l.note));
+      if(l.note)left.appendChild(el("div",{style:{fontSize:"12px",color:"#92400e",background:"#fffbeb",borderRadius:"6px",padding:"3px 8px",marginTop:"5px",wordBreak:"break-word",overflowWrap:"break-word"}},"📝 "+l.note));
       row.appendChild(left);
       var btns=el("div",{style:{display:"flex",gap:"6px",flexShrink:0,marginLeft:"8px"}});
       // 編輯按鈕：把該筆資料載入表單
@@ -1029,12 +1029,12 @@ function renderMassage(){
     var list=el("div",{style:{marginTop:"4px"}});
     recent.forEach(function(l){
       var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
-      var left=el("div",{style:{flex:1,minWidth:0}});
+      var left=el("div",{style:{flex:1,minWidth:0,overflow:"hidden"}});
       left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"4px"}},l.date));
       var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
       l.tools.forEach(function(id){var t=MASSAGE.filter(function(x){return x.id===id;})[0];if(t)tags.appendChild(el("span",{style:{background:"#f5f3ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:"6px",padding:"1px 8px",fontSize:"12px"}},t.emoji+" "+t.label));});
       left.appendChild(tags);
-      if(l.note)left.appendChild(el("div",{style:{fontSize:"11px",marginTop:"4px",background:"#fafafa",borderRadius:"6px",padding:"2px 8px"}},"📝 "+l.note));
+      if(l.note)left.appendChild(el("div",{style:{fontSize:"12px",color:"#92400e",background:"#fffbeb",borderRadius:"6px",padding:"3px 8px",marginTop:"5px",wordBreak:"break-word",overflowWrap:"break-word"}},"📝 "+l.note));
       var btns=el("div",{style:{display:"flex",gap:"6px",flexShrink:0,marginLeft:"8px"}});
       btns.appendChild(el("button",{style:{fontSize:"12px",color:"#2563eb",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"6px",padding:"3px 8px"},onclick:function(){S.mDate=l.date;S.mSel=l.tools.slice();S.mNote=l.note||"";S.mDuration=l.duration?String(l.duration):"";S.mBodyParts=(l.bodyParts||[]).slice();S.mTension=l.tension||0;S.editMDate=l.date;S.showMassage=true;render();}},"✏️ 編輯"));
       btns.appendChild(el("button",{style:{fontSize:"12px",color:"#ef4444",background:"#fff1f2",border:"1px solid #fecdd3",borderRadius:"6px",padding:"3px 8px"},onclick:function(){if(!confirm("確定刪除"+l.date+"的按摩記錄？"))return;S.massageLogs=S.massageLogs.filter(function(x){return x.date!==l.date;});persist();render();}},"🗑 刪除"));
@@ -1051,6 +1051,20 @@ function renderOtherStats(allActs){
   var card=el("div",{cls:"card"});
   var hRow=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}});
   hRow.appendChild(el("div",{style:{fontWeight:700,fontSize:"14px"}},"📊 月統計"));
+  hRow.appendChild(el("button",{style:{fontSize:"11px",color:"#6b7280",background:"#f3f4f6",border:"none",borderRadius:"6px",padding:"3px 8px",cursor:"pointer"},onclick:function(){
+    var thisMonth=S.otherLogs.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
+    var msg="本月("+thisMonth.length+"筆):\n";
+    thisMonth.forEach(function(l){
+      msg+=l.date+": ";
+      (l.activities||[]).forEach(function(a){
+        var id=typeof a==="object"?a.id:a;
+        var cnt=typeof a==="object"?a.count:"?";
+        msg+=id+"×"+cnt+" ";
+      });
+      msg+="\n";
+    });
+    alert(msg);
+  }},"🔍"));
 
   var mi=el("input",{type:"month",cls:"inp",style:{width:"auto",fontSize:"12px",padding:"4px 8px"},value:S.oStatsMonth,onchange:function(e){S.oStatsMonth=e.target.value;render();}});
   hRow.appendChild(mi);card.appendChild(hRow);
