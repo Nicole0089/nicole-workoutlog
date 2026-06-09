@@ -1041,6 +1041,19 @@ function renderOtherStats(allActs){
   var card=el("div",{cls:"card"});
   var hRow=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}});
   hRow.appendChild(el("div",{style:{fontWeight:700,fontSize:"14px"}},"📊 月統計"));
+  hRow.appendChild(el("button",{style:{fontSize:"11px",color:"#6b7280",background:"#f3f4f6",border:"none",borderRadius:"6px",padding:"3px 8px",cursor:"pointer"},onclick:function(){
+    var thisMonth=S.otherLogs.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
+    var msg="本月otherLogs("+thisMonth.length+"筆):\n";
+    thisMonth.forEach(function(l){
+      msg+=l.date+": ";
+      (l.activities||[]).forEach(function(a){
+        msg+=(typeof a==="object"?a.id+"x"+a.count:a+"x1")+" ";
+      });
+      if(l.note)msg+="["+l.note+"]";
+      msg+="\n";
+    });
+    alert(msg);
+  }},"🔍 診斷"));
   var mi=el("input",{type:"month",cls:"inp",style:{width:"auto",fontSize:"12px",padding:"4px 8px"},value:S.oStatsMonth,onchange:function(e){S.oStatsMonth=e.target.value;render();}});
   hRow.appendChild(mi);card.appendChild(hRow);
 
