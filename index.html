@@ -1060,7 +1060,15 @@ function renderOtherStats(allActs){
   var allItems=wtItems.concat(allActs.map(function(a){return{label:a.emoji+" "+a.label,color:a.color,cnt:S.otherLogs.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0&&l.activities.some(function(x){return(typeof x==="object"?x.id:x)===a.id;});
       }).reduce(function(total,l){
         var item=l.activities.filter(function(x){return(typeof x==="object"?x.id:x)===a.id;})[0];
-        var itemCount=item?(typeof item==="object"?+(item.count)||1:1):0;
+        var itemCount=0;
+        if(item){
+          if(typeof item==="object"){
+            itemCount=parseInt(item.count,10);
+            if(isNaN(itemCount)||itemCount<1)itemCount=1;
+          } else {
+            itemCount=1;
+          }
+        }
         return total+itemCount;
       },0)};}));
   // 加入按摩修復工具統計
@@ -2593,15 +2601,24 @@ function doCSV(type,allActs){
 }
 
 // ── 啟動 ──────────────────────────────────────────
-// 清理重複的 otherLogs（每天只保留最後一筆，修正月統計次數）
+// 啟動清理：去重 + 修正舊格式 activities
 (function(){
+  // 1. 修正舊格式（字串→物件）並確保 count 是數字
+  S.otherLogs=S.otherLogs.map(function(l){
+    return {
+      date:l.date,
+      note:l.note||"",
+      activities:(l.activities||[]).map(function(a){
+        if(typeof a==="string")return{id:a,count:1};
+        return{id:a.id,count:+(a.count)||1};
+      })
+    };
+  });
+  // 2. 去重（同日保留最後一筆）
   var _dm={};
   S.otherLogs.forEach(function(l){_dm[l.date]=l;});
-  var cleaned=Object.keys(_dm).sort().map(function(d){return _dm[d];});
-  if(cleaned.length!==S.otherLogs.length){
-    S.otherLogs=cleaned;
-    lsSet("other_logs",S.otherLogs);
-  }
+  S.otherLogs=Object.keys(_dm).sort().map(function(d){return _dm[d];});
+  lsSet("other_logs",S.otherLogs);
 })();
 if(!S.chartEx){var allEx=DEF_GROUPS.reduce(function(a,g){return a.concat(g.exercises);},[]);S.chartEx=allEx[0]||"";}
 render();
