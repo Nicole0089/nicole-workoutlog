@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="Nicole的運動日誌"/>
 <meta name="theme-color" content="#2563eb"/>
-<title>🏅 Nicole的運動日誌</title>
+<title>🏅 Nicole的運動日誌 v2.1</title>
 <link rel="chrome-webstore-item" href="https://chrome.google.com/webstore"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏅</text></svg>">
 <style>
@@ -1055,7 +1055,7 @@ function renderOtherStats(allActs){
     var raw=localStorage.getItem("other_logs");
     var parsed=raw?JSON.parse(raw):[];
     var thisMonth=parsed.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
-    var msg="localStorage: "+parsed.length+"筆 / S: "+S.otherLogs.length+"筆\n本月("+thisMonth.length+"筆):\n";
+    var msg="[v2.1] localStorage: "+parsed.length+"筆 / S: "+S.otherLogs.length+"筆\n本月("+thisMonth.length+"筆):\n";
     thisMonth.forEach(function(l){
       msg+=l.date+":\n";
       (l.activities||[]).forEach(function(a){
