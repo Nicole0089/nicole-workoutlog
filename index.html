@@ -1052,16 +1052,18 @@ function renderOtherStats(allActs){
   var hRow=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}});
   hRow.appendChild(el("div",{style:{fontWeight:700,fontSize:"14px"}},"📊 月統計"));
   hRow.appendChild(el("button",{style:{fontSize:"11px",color:"#6b7280",background:"#f3f4f6",border:"none",borderRadius:"6px",padding:"3px 8px",cursor:"pointer"},onclick:function(){
-    var thisMonth=S.otherLogs.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
-    var msg="本月("+thisMonth.length+"筆):\n";
+    var raw=localStorage.getItem("other_logs");
+    var parsed=raw?JSON.parse(raw):[];
+    var thisMonth=parsed.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
+    var msg="localStorage: "+parsed.length+"筆 / S: "+S.otherLogs.length+"筆\n本月("+thisMonth.length+"筆):\n";
     thisMonth.forEach(function(l){
-      msg+=l.date+": ";
+      msg+=l.date+":\n";
       (l.activities||[]).forEach(function(a){
         var id=typeof a==="object"?a.id:a;
-        var cnt=typeof a==="object"?a.count:"?";
-        msg+=id+"×"+cnt+" ";
+        var cnt=typeof a==="object"?a.count:"N/A";
+        var cntType=typeof a==="object"?typeof a.count:"string";
+        msg+="  "+id+" count="+cnt+"("+cntType+")\n";
       });
-      msg+="\n";
     });
     alert(msg);
   }},"🔍"));
