@@ -762,7 +762,7 @@ function renderOther(){
     if(S.showOtherHistory)recentCard.appendChild(el("div",{cls:"empty"},"尚無記錄"));
   } else if(S.showOtherHistory) {
     recentLogs.forEach(function(l){
-      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
+      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",alignItems:"flex-start",gap:"8px"}});
       var left=el("div",{style:{flex:1,minWidth:0,overflow:"hidden"}});
       left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",fontWeight:600,marginBottom:"4px"}},l.date));
       var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
@@ -1028,7 +1028,7 @@ function renderMassage(){
     if(!S.showMassageHistory){return card;}
     var list=el("div",{style:{marginTop:"4px"}});
     recent.forEach(function(l){
-      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
+      var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",alignItems:"flex-start",gap:"8px"}});
       var left=el("div",{style:{flex:1,minWidth:0,overflow:"hidden"}});
       left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"4px"}},l.date));
       var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
@@ -1055,15 +1055,30 @@ function renderOtherStats(allActs){
     var raw=localStorage.getItem("other_logs");
     var parsed=raw?JSON.parse(raw):[];
     var thisMonth=parsed.filter(function(l){return l.date.indexOf(S.oStatsMonth)===0;});
-    var msg="[v2.1] localStorage: "+parsed.length+"筆 / S: "+S.otherLogs.length+"筆\n本月("+thisMonth.length+"筆):\n";
+    // 手動計算 actTotals
+    var _totals={};
+    S.otherLogs.forEach(function(l){
+      if(l.date.indexOf(S.oStatsMonth)!==0)return;
+      (l.activities||[]).forEach(function(x){
+        var xid=typeof x==="object"?x.id:x;
+        var xc=typeof x==="object"?x.count:1;
+        var n=parseInt(xc,10);
+        if(!_totals[xid])_totals[xid]=0;
+        _totals[xid]+=(!isNaN(n)&&n>0)?n:1;
+      });
+    });
+    var msg="[v2.1] S.otherLogs: "+S.otherLogs.length+"筆 / localStorage: "+parsed.length+"筆\n";
+    msg+="\n== 本月計算結果 ==\n";
+    Object.keys(_totals).forEach(function(k){msg+=k+": "+_totals[k]+"\n";});
+    msg+="\n== 本月原始資料("+thisMonth.length+"筆) ==\n";
     thisMonth.forEach(function(l){
-      msg+=l.date+":\n";
+      msg+=l.date+": ";
       (l.activities||[]).forEach(function(a){
         var id=typeof a==="object"?a.id:a;
-        var cnt=typeof a==="object"?a.count:"N/A";
-        var cntType=typeof a==="object"?typeof a.count:"string";
-        msg+="  "+id+" count="+cnt+"("+cntType+")\n";
+        var cnt=typeof a==="object"?a.count:"?";
+        msg+=id+"×"+cnt+" ";
       });
+      msg+="\n";
     });
     alert(msg);
   }},"🔍"));
@@ -1163,7 +1178,7 @@ function renderOtherRecent(allActs){
   var recent=S.otherLogs.slice().reverse().slice(0,20);
   if(!recent.length){card.appendChild(el("div",{cls:"empty"},"尚無記錄"));return card;}
   recent.forEach(function(l){
-    var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between"}});
+    var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",alignItems:"flex-start",gap:"8px"}});
     var left=el("div",{style:{flex:1,minWidth:0,overflow:"hidden"}});
     left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"4px"}},l.date));
     var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
@@ -1175,7 +1190,7 @@ function renderOtherRecent(allActs){
       tags.appendChild(el("span",{style:{background:a.bg,color:a.color,border:"1px solid "+a.border,borderRadius:"6px",padding:"1px 8px",fontSize:"12px",fontWeight:600}},label));
     });
     left.appendChild(tags);
-    if(l.note)left.appendChild(el("div",{style:{fontSize:"11px",color:"#92400e",background:"#fffbeb",borderRadius:"6px",padding:"3px 8px",marginTop:"5px"}},"📝 "+l.note));
+    if(l.note)left.appendChild(el("div",{style:{fontSize:"12px",color:"#92400e",background:"#fffbeb",borderRadius:"6px",padding:"3px 8px",marginTop:"5px",wordBreak:"break-word",overflowWrap:"break-word"}},"📝 "+l.note));
     var btns=el("div",{style:{display:"flex",gap:"6px",flexShrink:0}});
     btns.appendChild(el("button",{style:{fontSize:"11px",color:"#2563eb",background:"none",border:"none"},onclick:(function(ll){return function(){S.oDate=ll.date;S.oSel=ll.activities.slice();S.oNote=ll.note||"";S.editODate=ll.date;S.tab="other";window.scrollTo(0,0);render();};})(l)},"✏️"));
     btns.appendChild(el("button",{style:{fontSize:"11px",color:"#ef4444",background:"none",border:"none"},onclick:(function(ll){return function(){S.otherLogs=S.otherLogs.filter(function(x){return x.date!==ll.date;});persist();render();};})(l)},"🗑"));
@@ -2190,7 +2205,7 @@ function renderBody(){
         rCard.appendChild(rTop);
         // 高亮關鍵字
         var noteText=r.note;
-        var noteEl=el("div",{style:{fontSize:"13px",color:"#374151",lineHeight:1.6,background:"#fffbeb",borderRadius:"6px",padding:"6px 10px"}});
+        var noteEl=el("div",{style:{fontSize:"13px",color:"#374151",lineHeight:1.6,background:"#fffbeb",borderRadius:"6px",padding:"6px 10px",wordBreak:"break-word",overflowWrap:"break-word"}});
         // 簡單高亮（分割後重組）
         var escapedKw=kw.replace(/[.*+?^${}()|\[\]\\]/g,"\\$&");var parts=noteText.split(new RegExp("("+escapedKw+")","gi"));
         parts.forEach(function(p){
