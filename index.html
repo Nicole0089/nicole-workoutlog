@@ -1084,20 +1084,22 @@ function renderOtherStats(allActs){
     {label:"🎓 教練課",  color:"#7c3aed",cnt:wtCoach},
   ];
 
-  // 計算各運動當月總次數
-  var allItems=wtItems.concat(allActs.map(function(a){
-    var total=0;
-    S.otherLogs.forEach(function(l){
-      if(l.date.indexOf(S.oStatsMonth)!==0)return;
-      (l.activities||[]).forEach(function(x){
-        var xid=typeof x==="object"?x.id:x;
-        if(xid!==a.id)return;
-        var xc=typeof x==="object"?x.count:1;
-        var n=parseInt(xc,10);
-        total+=(!isNaN(n)&&n>0)?n:1;
-      });
+  // 計算各運動當月總次數（掃描所有出現的 ID，不只限清單裡的）
+  var actTotals={};
+  S.otherLogs.forEach(function(l){
+    if(l.date.indexOf(S.oStatsMonth)!==0)return;
+    (l.activities||[]).forEach(function(x){
+      var xid=typeof x==="object"?x.id:x;
+      var xc=typeof x==="object"?x.count:1;
+      var n=parseInt(xc,10);
+      if(!actTotals[xid])actTotals[xid]=0;
+      actTotals[xid]+=(!isNaN(n)&&n>0)?n:1;
     });
-    return{label:a.emoji+" "+a.label,color:a.color,cnt:total};
+  });
+  // 用 allActs 清單取得名稱，找不到的用 getActInfo
+  var allItems=wtItems.concat(Object.keys(actTotals).map(function(id){
+    var a=allActs.filter(function(x){return x.id===id;})[0]||getActInfo(id);
+    return{label:a.emoji+" "+a.label,color:a.color||"#6b7280",cnt:actTotals[id]};
   }));
   // 加入按摩修復工具統計
   var massageItems=getMassage().map(function(m){return{
@@ -1162,7 +1164,7 @@ function renderOtherRecent(allActs){
   if(!recent.length){card.appendChild(el("div",{cls:"empty"},"尚無記錄"));return card;}
   recent.forEach(function(l){
     var row=el("div",{style:{padding:"8px 0",borderBottom:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between"}});
-    var left=el("div",{});
+    var left=el("div",{style:{flex:1,minWidth:0,overflow:"hidden"}});
     left.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"4px"}},l.date));
     var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
     l.activities.forEach(function(item){
