@@ -1855,7 +1855,29 @@ function renderChart(){
   } else {
     if(!S.chartEx){var allEx=DEF_GROUPS.reduce(function(a,g){return a.concat(g.exercises);},[]);S.chartEx=allEx[0]||"";}
     var exSel=el("select",{cls:"inp",style:{marginBottom:"10px"}});
-    S.groups.forEach(function(g){var og=document.createElement("optgroup");og.label=g.emoji+" "+g.label;g.exercises.forEach(function(ex){og.appendChild(el("option",{value:ex},ex));});exSel.appendChild(og);});
+    // 先加 groups 裡的動作
+    S.groups.forEach(function(g){
+      var og=document.createElement("optgroup");
+      og.label=g.emoji+" "+g.label;
+      g.exercises.forEach(function(ex){og.appendChild(el("option",{value:ex},ex));});
+      exSel.appendChild(og);
+    });
+    // 再加 sessions 裡有記錄但不在 groups 的動作
+    var allGroupEx=S.groups.reduce(function(a,g){return a.concat(g.exercises);},[]);
+    var recordedEx=[];
+    S.sessions.forEach(function(s){
+      (s.rows||[]).forEach(function(r){
+        if(r.exercise&&allGroupEx.indexOf(r.exercise)<0&&recordedEx.indexOf(r.exercise)<0){
+          recordedEx.push(r.exercise);
+        }
+      });
+    });
+    if(recordedEx.length>0){
+      var og2=document.createElement("optgroup");
+      og2.label="📋 其他記錄動作";
+      recordedEx.forEach(function(ex){og2.appendChild(el("option",{value:ex},ex));});
+      exSel.appendChild(og2);
+    }
     exSel.value=S.chartEx;
     exSel.addEventListener("change",function(e){S.chartEx=e.target.value;render();});
     chartCard.appendChild(exSel);
