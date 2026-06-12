@@ -16,7 +16,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏅</text></svg>">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;min-height:100vh;font-size:15px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;min-height:100vh;font-size:17px}
 input,select,textarea,button{font-family:inherit;font-size:17px}
 button{cursor:pointer}
 textarea{resize:vertical}
@@ -29,11 +29,11 @@ textarea{resize:vertical}
 .tab.active{font-weight:800;color:#2563eb;border-bottom-color:#2563eb}
 .content{padding:16px 14px 100px}
 .card{background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:14px}
-.lbl{font-size:14px;font-weight:700;color:#374151;margin-bottom:6px}
-.inp{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:14px;outline:none;background:#f9fafb;color:#111827;display:block}
+.lbl{font-size:17px;font-weight:700;color:#374151;margin-bottom:6px}
+.inp{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:17px;outline:none;background:#f9fafb;color:#111827;display:block}
 .inp:focus{border-color:#2563eb}
-.btn-p{background:#2563eb;color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer}
-.btn-g{background:#f3f4f6;color:#374151;border:1px dashed #d1d5db;border-radius:10px;padding:9px 0;font-size:13px;font-weight:600;cursor:pointer;width:100%}
+.btn-p{background:#2563eb;color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:17px;font-weight:700;cursor:pointer}
+.btn-g{background:#f3f4f6;color:#374151;border:1px dashed #d1d5db;border-radius:10px;padding:9px 0;font-size:17px;font-weight:600;cursor:pointer;width:100%}
 .row2{display:flex;gap:10px}
 .row2>div{flex:1}
 .empty{text-align:center;color:#6b7280;padding:48px 0;font-size:14px;font-weight:500}
@@ -667,17 +667,6 @@ function renderOther(){
     eb.appendChild(el("button",{style:{fontSize:"12px",color:"#6b7280",background:"none",border:"none",cursor:"pointer"},onclick:function(){S.editODate=null;S.oSel=[];S.oNote="";S._oLoaded=null;S.oDate=today();render();}},"✕ 取消編輯"));
     card.appendChild(eb);
   }
-  // 初始化：只在第一次開啟當天頁面時載入
-  // S._oLoaded == S.oDate 表示已載入，不重複載入
-  if(!S.editODate && S._oLoaded !== S.oDate && !S.oSel.length){
-    var _todayLog=S.otherLogs.filter(function(l){return l.date===S.oDate;})[0];
-    if(_todayLog){
-      S.oSel=_todayLog.activities.map(function(a){return typeof a==="object"?a:{id:a,count:1};});
-      S.oNote=_todayLog.note||"";
-    }
-    S._oLoaded=S.oDate; // 標記此日期已載入
-  }
-
   card.appendChild(el("div",{cls:"lbl"},"記錄日期"));
   card.appendChild(el("input",{type:"date",cls:"inp",style:{marginBottom:"12px"},value:S.oDate,onchange:function(e){
     S.oDate=e.target.value;
