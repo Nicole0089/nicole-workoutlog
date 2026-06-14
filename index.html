@@ -1871,20 +1871,26 @@ function renderChart(){
     exSel.addEventListener("change",function(e){S.chartEx=e.target.value;render();});
     chartCard.appendChild(exSel);
     var metBtns=el("div",{style:{display:"flex",gap:"8px",marginBottom:"12px"}});
-    [["maxWeight","最大重量"],["totalVol","總訓練量"]].forEach(function(x){metBtns.appendChild(el("button",{style:{border:"none",borderRadius:"20px",padding:"5px 14px",fontSize:"12px",fontWeight:600,background:S.chartMetric===x[0]?"#2563eb":"#f3f4f6",color:S.chartMetric===x[0]?"#fff":"#374151"},onclick:function(){S.chartMetric=x[0];render();}},x[1]));});
+    [["maxWeight","最大重量"],["totalVol","總訓練量"],["totalReps","總次數"]].forEach(function(x){metBtns.appendChild(el("button",{style:{border:"none",borderRadius:"20px",padding:"5px 14px",fontSize:"12px",fontWeight:600,background:S.chartMetric===x[0]?"#2563eb":"#f3f4f6",color:S.chartMetric===x[0]?"#fff":"#374151"},onclick:function(){S.chartMetric=x[0];render();}},x[1]));});
     chartCard.appendChild(metBtns);
     var cg=getGroup(S.chartEx,S.groups);
+    var metricUnit=S.chartMetric==="totalReps"?"次":"kg";
+    var metricLabel=S.chartMetric==="maxWeight"?"最大重量 (kg)":S.chartMetric==="totalVol"?"總訓練量 (kg)":"總次數 (次)";
     var titleRow=el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px",display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}});
     if(cg)titleRow.appendChild(el("span",{style:{background:cg.bg,color:cg.color,border:"1px solid "+cg.border,borderRadius:"5px",padding:"1px 7px",fontSize:"11px"}},cg.emoji+" "+cg.label));
-    titleRow.appendChild(document.createTextNode(S.chartEx+" — "+(S.chartMetric==="maxWeight"?"最大重量 (kg)":"總訓練量 (kg)")));
+    titleRow.appendChild(document.createTextNode(S.chartEx+" — "+metricLabel));
     chartCard.appendChild(titleRow);
     var exData=S.sessions.filter(function(s){return s.rows&&s.rows.some(function(r){return r.exercise===S.chartEx;});}).map(function(s){
       var r=s.rows.filter(function(r){return r.exercise===S.chartEx;})[0];
-      var sets=(r&&r.sets||[]).filter(function(s2){return +s2.weight>0&&+s2.reps>0;});
-      var val=S.chartMetric==="maxWeight"?sets.reduce(function(m,s2){return Math.max(m,+s2.weight);},0):sets.reduce(function(t,s2){return t+(+s2.weight*+s2.reps);},0);
+      // 只要求 reps>0，允許自身體重動作(weight=0)也納入計算
+      var sets=(r&&r.sets||[]).filter(function(s2){return +s2.reps>0;});
+      var val;
+      if(S.chartMetric==="maxWeight")val=sets.reduce(function(m,s2){return Math.max(m,+s2.weight);},0);
+      else if(S.chartMetric==="totalReps")val=sets.reduce(function(t,s2){return t+(+s2.reps);},0);
+      else val=sets.reduce(function(t,s2){return t+(+s2.weight*+s2.reps);},0);
       return{date:s.date,value:val};
     }).filter(function(d){return d.value>0;});
-    chartCard.appendChild(makeSVGChart(exData,cg?cg.color:"#059669","kg"));
+    chartCard.appendChild(makeSVGChart(exData,cg?cg.color:"#059669",metricUnit));
   }
   w.appendChild(chartCard);
   // 月統計
