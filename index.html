@@ -1023,6 +1023,12 @@ function renderMassage(){
       var tags=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px"}});
       l.tools.forEach(function(id){var t=MASSAGE.filter(function(x){return x.id===id;})[0];if(t)tags.appendChild(el("span",{style:{background:"#f5f3ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:"6px",padding:"1px 8px",fontSize:"12px"}},t.emoji+" "+t.label));});
       left.appendChild(tags);
+      var _mpn={neck:"肩頸",back:"背部",arm:"手臂",hip:"臀部",thigh:"大腿",calf:"小腿",full:"全身"};
+      var metaBits=[];
+      if(l.duration)metaBits.push("⏱ "+l.duration+"分鐘");
+      if(l.bodyParts&&l.bodyParts.length)metaBits.push("🦵 "+l.bodyParts.map(function(p){return _mpn[p]||p;}).join("、"));
+      if(l.tension)metaBits.push("😣 緊繃"+l.tension);
+      if(metaBits.length)left.appendChild(el("div",{style:{display:"flex",flexWrap:"wrap",gap:"8px",fontSize:"12px",color:"#6b7280",marginTop:"4px"}},metaBits.join("　")));
       var btns=el("div",{style:{display:"flex",gap:"6px",flexShrink:0}});
       btns.appendChild(el("button",{style:{fontSize:"12px",color:"#2563eb",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"6px",padding:"3px 8px"},onclick:function(){S.mDate=l.date;S.mSel=l.tools.slice();S.mNote=l.note||"";S.mDuration=l.duration?String(l.duration):"";S.mBodyParts=(l.bodyParts||[]).slice();S.mTension=l.tension||0;S.editMDate=l.date;S.showMassage=true;render();}},"✏️ 編輯"));
       btns.appendChild(el("button",{style:{fontSize:"12px",color:"#ef4444",background:"#fff1f2",border:"1px solid #fecdd3",borderRadius:"6px",padding:"3px 8px"},onclick:function(){if(!confirm("確定刪除"+l.date+"的按摩記錄？"))return;S.massageLogs=S.massageLogs.filter(function(x){return x.date!==l.date;});persist();render();}},"🗑 刪除"));
