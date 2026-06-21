@@ -163,6 +163,13 @@ function isTimeBased(ex,g){if(!ex)return false;if(g&&g.id==="cardio")return true
 function rpeColor(r){var n=+r;if(n<=4)return"#059669";if(n<=6)return"#d97706";if(n<=8)return"#ea580c";return"#dc2626";}
 function newRow(){return{id:Date.now()+Math.random(),exercise:"",_selGid:"",sets:[{reps:"",weight:"",rpe:""}]};}
 function deepClone(o){return JSON.parse(JSON.stringify(o));}
+// 計算「記錄類」資料總筆數(重訓+身體數據+其他運動+按摩修復)
+// 用於備份/還原前的防呆檢查：避免空白(或筆數較少)的資料覆蓋既有記錄
+// d 預設為目前的 S(本機狀態)，也可傳入解析後的備份檔物件(d)來計算「即將還原的資料」筆數
+function getBackupRecordCount(d){
+  d=d||S;
+  return(d.sessions?d.sessions.length:0)+(d.bodyData?d.bodyData.length:0)+(d.otherLogs?d.otherLogs.length:0)+(d.massageLogs?d.massageLogs.length:0);
+}
 
 function el(tag,attrs){
   var e=document.createElement(tag);
@@ -2288,11 +2295,9 @@ function renderExport(){
   card.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"12px"}},"備份同步至 Google 雲端，換裝置後可完整還原。"));
   var gdRow=el("div",{style:{display:"flex",gap:"8px",marginBottom:"8px"}});
   gdRow.appendChild(el("button",{style:{flex:1,background:"#fff",border:"1.5px solid #0f9d58",color:"#0f9d58",borderRadius:"10px",padding:"12px 0",fontSize:"13px",fontWeight:700,cursor:"pointer"},onclick:function(){
-    var data={version:1,exportedAt:new Date().toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache};
-    // 確認有資料才同步
-    var totalRecords=(data.sessions?data.sessions.length:0)+
-      (data.bodyData?data.bodyData.length:0)+
-      (data.otherLogs?data.otherLogs.length:0);
+    var data={version:1,exportedAt:new Date().toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache,pinnedExercises:S.pinnedExercises,goals:S.goals,bodyTargetWeight:S.bodyTargetWeight};
+    // 確認有資料才同步(含重訓/身體數據/其他運動/按摩修復)
+    var totalRecords=getBackupRecordCount(data);
     if(totalRecords===0){
       notify("⚠️ 目前沒有資料可以備份，請先記錄運動後再同步");
       return;
@@ -2333,6 +2338,18 @@ function renderExport(){
               notify("❌ 格式不正確，version欄位遺失");
               return;
             }
+            // 防呆：若即將還原的筆數比本機現有筆數還少(含0筆)，先請使用者確認，避免誤點覆蓋
+            var incomingCount=getBackupRecordCount(d);
+            var localCount=getBackupRecordCount(S);
+            if(incomingCount<localCount){
+              var warnMsg=incomingCount===0
+                ?"⚠️ 這份雲端備份內沒有任何記錄，還原將清空本機目前的"+localCount+"筆記錄，確定要繼續嗎？"
+                :"這份雲端備份只有"+incomingCount+"筆記錄，比本機目前的"+localCount+"筆少，還原後本機資料會被取代，確定要繼續嗎？";
+              if(!confirm(warnMsg)){
+                notify("已取消還原");
+                return;
+              }
+            }
             var count=0;
             if(d.sessions){S.sessions=d.sessions;lsSet("sessions",d.sessions);count+=d.sessions.length;}
             if(d.bodyData){S.bodyData=d.bodyData;lsSet("body",d.bodyData);count+=d.bodyData.length;}
@@ -2343,6 +2360,9 @@ function renderExport(){
             if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);lsSet("ex_groups_version",GVER);}
             if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
             if(d.actNameCache){S.actNameCache=d.actNameCache;lsSet("act_name_cache",d.actNameCache);}
+            if(d.pinnedExercises){S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);}
+            if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
+            if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
             S._lastSyncTime=new Date().toISOString();
             lsSet("last_sync_time",S._lastSyncTime);
             notify("✅ 還原成功！共"+count+"筆記錄");
@@ -2384,6 +2404,7 @@ function renderExport(){
   card.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"12px"}},"四份報表（重訓、運動、身體數據、按摩）同步至 Google 雲端。"));
   card.appendChild(el("button",{style:{width:"100%",background:"#059669",color:"#fff",border:"none",borderRadius:"10px",padding:"13px 0",fontSize:"15px",fontWeight:700,cursor:"pointer",marginBottom:"8px"},onclick:function(){
     if(typeof XLSX==="undefined"){notify("❌ Excel 程式庫尚未載入");return;}
+    if(getBackupRecordCount(S)===0){notify("⚠️ 目前沒有資料可以匯出，請先記錄運動後再同步");return;}
     notify("☁️ 準備上傳 Excel…");
     try{
       var wb=exportExcelWorkbook(allActs);
@@ -2404,8 +2425,8 @@ function renderExport(){
   var emergBtns=el("div",{style:{display:"flex",gap:"8px",marginBottom:"10px"}});
   // 緊急匯出
   emergBtns.appendChild(el("button",{style:{flex:1,background:"#fff",border:"1.5px solid #6b7280",color:"#6b7280",borderRadius:"10px",padding:"10px 0",fontSize:"13px",fontWeight:700,cursor:"pointer"},onclick:function(){
-    var data={version:1,exportedAt:new Date().toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache};
-    var total=(S.sessions?S.sessions.length:0)+(S.bodyData?S.bodyData.length:0)+(S.otherLogs?S.otherLogs.length:0);
+    var data={version:1,exportedAt:new Date().toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache,pinnedExercises:S.pinnedExercises,goals:S.goals,bodyTargetWeight:S.bodyTargetWeight};
+    var total=getBackupRecordCount(data);
     if(total===0){notify("⚠️ 目前沒有資料可備份");return;}
     dlFile(JSON.stringify(data,null,2),"Nicole緊急備份_"+today()+".json","application/json;charset=utf-8;");
     notify("✅ 緊急備份已下載（"+total+"筆記錄）");
@@ -2421,6 +2442,15 @@ function renderExport(){
       try{
         var d=JSON.parse(ev.target.result);
         if(!d.version){notify("❌ 檔案格式不正確");return;}
+        // 防呆：若即將匯入的筆數比本機現有筆數還少(含0筆)，先請使用者確認，避免誤蓋本機既有記錄
+        var incomingCount=getBackupRecordCount(d);
+        var localCount=getBackupRecordCount(S);
+        if(incomingCount<localCount){
+          var warnMsg=incomingCount===0
+            ?"⚠️ 這份備份檔案內沒有任何記錄，還原將清空本機目前的"+localCount+"筆記錄，確定要繼續嗎？"
+            :"這份備份檔案只有"+incomingCount+"筆記錄，比本機目前的"+localCount+"筆少，還原後本機資料會被取代，確定要繼續嗎？";
+          if(!confirm(warnMsg)){notify("已取消還原");return;}
+        }
         if(d.sessions){S.sessions=d.sessions;lsSet("sessions",d.sessions);}
         if(d.bodyData){S.bodyData=d.bodyData;lsSet("body",d.bodyData);}
         if(d.otherLogs){S.otherLogs=d.otherLogs;lsSet("other_logs",d.otherLogs);}
@@ -2428,6 +2458,9 @@ function renderExport(){
         if(d.customActs){S.customActs=d.customActs;lsSet("custom_acts",d.customActs);}
         if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);}
         if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
+        if(d.pinnedExercises){S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);}
+        if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
+        if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
         var cnt=(d.sessions?d.sessions.length:0)+(d.bodyData?d.bodyData.length:0)+(d.otherLogs?d.otherLogs.length:0);
         notify("✅ 還原成功！共"+cnt+"筆記錄");render();
       }catch(err){notify("❌ 還原失敗："+err.message);}
@@ -2459,9 +2492,9 @@ function autoSyncBackup(){
   if(!GD_CLIENT_ID)return; // 沒有設定 API 憑證
   // 確認 gapi 已載入
   if(typeof gapi==="undefined"||typeof google==="undefined")return;
-  var data={version:1,exportedAt:now.toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups};
-  // 確認有資料才自動同步
-  var autoTotal=(S.sessions?S.sessions.length:0)+(S.bodyData?S.bodyData.length:0)+(S.otherLogs?S.otherLogs.length:0);
+  var data={version:1,exportedAt:now.toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache,pinnedExercises:S.pinnedExercises,goals:S.goals,bodyTargetWeight:S.bodyTargetWeight};
+  // 確認有資料才自動同步(含重訓/身體數據/其他運動/按摩修復)
+  var autoTotal=getBackupRecordCount(data);
   if(autoTotal===0)return;
   uploadToGDrive(JSON.stringify(data,null,2),"Nicole運動日誌備份.json","application/json",function(){
     S._lastSyncTime=now.toISOString();
