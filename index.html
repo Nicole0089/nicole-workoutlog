@@ -229,7 +229,7 @@ function requestNotifPermission(cb){
 // ── Google Drive 整合 ──
 var GD_CLIENT_ID="668265197953-p176ih44fca2gi80028g8bjeq39l2a23.apps.googleusercontent.com";
 var GD_API_KEY="AIzaSyBYYQfRbbWgJ9CaSCgzLYodrdZu7CUhObA";
-var GD_SCOPE="https://www.googleapis.com/auth/drive.file";
+var GD_SCOPE="https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
 var _gdTokenClient=null;
 var _gdInited=false;
 
@@ -254,6 +254,7 @@ function gdSignIn(cb){
   }
   _gdTokenClient.callback=function(resp){
     if(resp.error){notify("❌ Google 登入失敗");return;}
+    fetchGDriveAccountEmail();
     cb();
   };
   if(!gapi.client.getToken()){
@@ -261,6 +262,65 @@ function gdSignIn(cb){
   } else {
     _gdTokenClient.requestAccessToken({prompt:""});
   }
+}
+
+// 取得目前登入的 Google 帳號 email，顯示在匯出頁讓使用者確認帳號正確
+// 失敗時靜默忽略，不影響備份/還原等主要功能
+function fetchGDriveAccountEmail(){
+  var token=gapi.client.getToken();
+  if(!token||!token.access_token)return;
+  fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+    headers:{"Authorization":"Bearer "+token.access_token}
+  }).then(function(r){return r.ok?r.json():null;})
+    .then(function(info){
+      if(info&&info.email&&info.email!==S._gdEmail){
+        S._gdEmail=info.email;
+        lsSet("gd_account_email",info.email);
+        render();
+      }
+    }).catch(function(){});
+}
+
+// 強制跳出 Google 帳號選擇器，讓使用者主動切換/確認備份用的帳號
+function switchGDriveAccount(){
+  if(!GD_CLIENT_ID){
+    alert("請先設定 Google API 憑證（Client ID）。請參考說明文件設定。");
+    return;
+  }
+  _gdTokenClient.callback=function(resp){
+    if(resp.error){notify("❌ Google 登入失敗");return;}
+    fetchGDriveAccountEmail();
+    notify("✅ 已切換 Google 帳號");
+  };
+  _gdTokenClient.requestAccessToken({prompt:"select_account"});
+}
+
+// 產生帶時間戳記的備份檔名，例如 Nicole運動日誌備份_2026-06-22_15-30-45.json
+// 每次同步都用不同檔名 → uploadToGDrive會走「新建」分支，保留歷史版本而非覆蓋舊版
+function gdBackupFilename(){
+  var d=new Date();
+  function p2(n){return(n<10?"0":"")+n;}
+  return"Nicole運動日誌備份_"+d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate())+"_"+p2(d.getHours())+"-"+p2(d.getMinutes())+"-"+p2(d.getSeconds())+".json";
+}
+
+// 只保留最新 maxKeep 份雲端備份，超過的舊版本自動刪除，避免Drive檔案無限累積
+// 刪除失敗(例如權限不足)時靜默忽略，不影響本次同步是否成功
+function pruneOldGDriveBackups(maxKeep){
+  maxKeep=maxKeep||6;
+  gdSignIn(function(){
+    gapi.client.drive.files.list({
+      q:"name contains '運動日誌備份' and trashed=false",
+      fields:"files(id,modifiedTime)",
+      orderBy:"modifiedTime desc",
+      pageSize:50
+    }).then(function(r){
+      var files=r.result.files||[];
+      if(files.length<=maxKeep)return;
+      files.slice(maxKeep).forEach(function(f){
+        gapi.client.drive.files.delete({fileId:f.id}).catch(function(){});
+      });
+    }).catch(function(){});
+  });
 }
 
 function uploadToGDrive(content2, filename, mimeType, cb){
@@ -500,6 +560,8 @@ var S={
   _showGDList:false,
   _gdFiles:[],
   _lastSyncTime:lsGet("last_sync_time",null),
+  _lastSyncCount:lsGet("last_sync_count",null),  // 上次成功同步時的本機記錄總筆數，用於偵測資料是否變少
+  _gdEmail:lsGet("gd_account_email",null),  // 目前/上次登入的 Google 帳號 email
   // 展開/收合（預設收起）
   showMassageHistory:false,
   showOtherHistory:false,
@@ -2302,10 +2364,20 @@ function renderExport(){
       notify("⚠️ 目前沒有資料可以備份，請先記錄運動後再同步");
       return;
     }
+    // 防呆：若目前筆數比上次同步時還少，可能是不小心刪除了記錄，先請使用者確認再覆蓋雲端備份
+    if(S._lastSyncCount!=null&&totalRecords<S._lastSyncCount){
+      if(!confirm("目前本機記錄共"+totalRecords+"筆，比上次同步時的"+S._lastSyncCount+"筆少。\n繼續同步會用目前的資料覆蓋雲端備份，確定要繼續嗎？")){
+        notify("已取消同步");
+        return;
+      }
+    }
     notify("☁️ 連線中… (共"+totalRecords+"筆記錄)");
-    uploadToGDrive(JSON.stringify(data,null,2),"Nicole運動日誌備份.json","application/json",function(){
+    uploadToGDrive(JSON.stringify(data,null,2),gdBackupFilename(),"application/json",function(){
       S._lastSyncTime=new Date().toISOString();
+      S._lastSyncCount=totalRecords;
       lsSet("last_sync_time",S._lastSyncTime);
+      lsSet("last_sync_count",S._lastSyncCount);
+      pruneOldGDriveBackups(6);
       render();
     });
   }},"☁️ 同步至 Google 雲端"));
@@ -2364,7 +2436,9 @@ function renderExport(){
             if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
             if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
             S._lastSyncTime=new Date().toISOString();
+            S._lastSyncCount=getBackupRecordCount(S);
             lsSet("last_sync_time",S._lastSyncTime);
+            lsSet("last_sync_count",S._lastSyncCount);
             notify("✅ 還原成功！共"+count+"筆記錄");
             render();
           }catch(e){
@@ -2374,14 +2448,25 @@ function renderExport(){
         });
       };})(f)});
       var fLeft=el("div",{});
-      fLeft.appendChild(el("div",{style:{fontSize:"13px",fontWeight:600,color:"#374151"}},f.name));
-      fLeft.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af"}},f.modifiedTime?f.modifiedTime.slice(0,10):""));
+      var fTimeStr=f.modifiedTime?new Date(f.modifiedTime).toLocaleString("zh-TW"):"";
+      fLeft.appendChild(el("div",{style:{fontSize:"13px",fontWeight:600,color:"#374151"}},fTimeStr||f.name));
+      fLeft.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af"}},f.name));
       fr.appendChild(fLeft);
       fr.appendChild(el("span",{style:{fontSize:"12px",color:"#4285f4"}},"選擇 →"));
       gdList.appendChild(fr);
     });
     gdList.appendChild(el("button",{style:{fontSize:"12px",color:"#6b7280",background:"none",border:"none",cursor:"pointer",marginTop:"6px"},onclick:function(){S._showGDList=false;render();}},"✕ 取消"));
     card.appendChild(gdList);
+  }
+  // 顯示目前登入的 Google 帳號(方便確認備份/還原是不是用同一個帳號)
+  if(S._gdEmail){
+    var acctInfo=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"8px",padding:"8px 12px",marginBottom:"10px",fontSize:"12px"}});
+    var acctLeft=el("div",{});
+    acctLeft.appendChild(el("div",{style:{color:"#1d4ed8",fontWeight:700,marginBottom:"2px"}},"👤 目前 Google 帳號"));
+    acctLeft.appendChild(el("div",{style:{color:"#374151"}},S._gdEmail));
+    acctInfo.appendChild(acctLeft);
+    acctInfo.appendChild(el("button",{style:{background:"#fff",border:"1px solid #93c5fd",color:"#1d4ed8",borderRadius:"8px",padding:"6px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"},onclick:function(){switchGDriveAccount();}},"切換帳號"));
+    card.appendChild(acctInfo);
   }
   // 顯示上次同步時間
   var syncTimeStr="尚未同步";
@@ -2394,15 +2479,15 @@ function renderExport(){
   var syncInfo=el("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:"8px",padding:"8px 12px",marginBottom:"12px",fontSize:"12px"}});
   syncInfo.appendChild(el("div",{style:{color:"#059669",fontWeight:700,marginBottom:"2px"}},"🕐 上次同步時間"));
   syncInfo.appendChild(el("div",{style:{color:"#374151"}},syncTimeStr));
-  syncInfo.appendChild(el("div",{style:{color:"#6b7280",fontSize:"11px",marginTop:"4px"}},"每次開啟 App 超過 2 天未同步時自動備份"));
+  syncInfo.appendChild(el("div",{style:{color:"#6b7280",fontSize:"11px",marginTop:"4px"}},"每次開啟 App 超過 2 天未同步時自動備份；雲端保留最近6份歷史備份"));
   card.appendChild(syncInfo);
   card.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af",marginBottom:"16px",textAlign:"center"}},"首次使用需授權 Google 帳號"));
 
   // ── Excel 同步至 Google 雲端 ──
   card.appendChild(el("div",{style:{borderTop:"1px solid #f3f4f6",paddingTop:"14px"}}));
   card.appendChild(el("div",{style:{fontWeight:700,fontSize:"15px",color:"#374151",marginBottom:"4px"}},"📊 Excel 報表"));
-  card.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"12px"}},"四份報表（重訓、運動、身體數據、按摩）同步至 Google 雲端。"));
-  card.appendChild(el("button",{style:{width:"100%",background:"#059669",color:"#fff",border:"none",borderRadius:"10px",padding:"13px 0",fontSize:"15px",fontWeight:700,cursor:"pointer",marginBottom:"8px"},onclick:function(){
+  card.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"12px"}},"四份報表（重訓、運動、身體數據、按摩），方便查看與列印用。"));
+  card.appendChild(el("button",{style:{width:"100%",background:"#059669",color:"#fff",border:"none",borderRadius:"10px",padding:"13px 0",fontSize:"15px",fontWeight:700,cursor:"pointer",marginBottom:"4px"},onclick:function(){
     if(typeof XLSX==="undefined"){notify("❌ Excel 程式庫尚未載入");return;}
     if(getBackupRecordCount(S)===0){notify("⚠️ 目前沒有資料可以匯出，請先記錄運動後再同步");return;}
     notify("☁️ 準備上傳 Excel…");
@@ -2413,6 +2498,7 @@ function renderExport(){
       uploadExcelToGDrive(blob,"Nicole運動日誌報表.xlsx");
     }catch(err){notify("❌ Excel 產生失敗："+err.message);}
   }},"☁️ 同步 Excel 至 Google 雲端"));
+  card.appendChild(el("div",{style:{fontSize:"11px",color:"#dc2626",marginBottom:"8px"}},"⚠️ 此檔案無法用於還原資料，請使用上方「Google 雲端硬碟」備份。"));
 
   // ── CSV 備用 ──
   card.appendChild(el("div",{style:{borderTop:"1px solid #f3f4f6",paddingTop:"12px",marginTop:"4px"}}));
@@ -2496,9 +2582,18 @@ function autoSyncBackup(){
   // 確認有資料才自動同步(含重訓/身體數據/其他運動/按摩修復)
   var autoTotal=getBackupRecordCount(data);
   if(autoTotal===0)return;
-  uploadToGDrive(JSON.stringify(data,null,2),"Nicole運動日誌備份.json","application/json",function(){
+  // 防呆：自動同步是靜默執行的，若發現目前筆數比上次同步時還少(可能誤刪記錄)，
+  // 不直接覆蓋雲端備份，而是暫停這次自動同步，改用提醒請使用者到「匯出」頁手動確認後再同步
+  if(S._lastSyncCount!=null&&autoTotal<S._lastSyncCount){
+    notify("⚠️ 偵測到記錄筆數比上次同步時少("+autoTotal+"筆 < "+S._lastSyncCount+"筆)，已暫停自動同步，請至「匯出」頁確認後手動同步");
+    return;
+  }
+  uploadToGDrive(JSON.stringify(data,null,2),gdBackupFilename(),"application/json",function(){
     S._lastSyncTime=now.toISOString();
+    S._lastSyncCount=autoTotal;
     lsSet("last_sync_time",S._lastSyncTime);
+    lsSet("last_sync_count",S._lastSyncCount);
+    pruneOldGDriveBackups(6);
     notify("✅ 已自動同步備份至 Google 雲端");
     render(); // 更新顯示的同步時間
   });
