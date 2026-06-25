@@ -91,21 +91,10 @@ var DEFAULT_OTHER_ACTS=[
   {id:"qigong", label:"回春動功",emoji:"🌿",color:"#059669",bg:"#f0fdf4",border:"#bbf7d0",note:""},
   {id:"slowrun",label:"超慢跑",  emoji:"🐢",color:"#d97706",bg:"#fffbeb",border:"#fde68a",note:""},
 ];
-// 預先寫入已移除項目的名稱快取，確保歷史記錄仍可正常顯示
-(function(){
-  var _removedActs=[
-    {id:"dance",label:"排舞",emoji:"💃",color:"#db2777",bg:"#fdf2f8",border:"#fbcfe8"}
-  ];
-  var _cache=JSON.parse(localStorage.getItem("act_name_cache")||"{}");
-  var _changed=false;
-  _removedActs.forEach(function(a){
-    if(!_cache[a.id]){
-      _cache[a.id]={label:a.label,emoji:a.emoji,color:a.color,bg:a.bg,border:a.border};
-      _changed=true;
-    }
-  });
-  if(_changed)localStorage.setItem("act_name_cache",JSON.stringify(_cache));
-})();
+// 已退役但需保留歷史顯示的運動項目（硬編碼，確保歷史記錄永遠找得到名稱，不依賴 actNameCache）
+var RETIRED_ACTS=[
+  {id:"dance",label:"排舞",emoji:"💃",color:"#db2777",bg:"#fdf2f8",border:"#fbcfe8"},
+];
 // 讓 OTHER_ACTS 變成動態（從 localStorage 讀取）
 function getOtherActs(){return lsGet("other_acts_list", DEFAULT_OTHER_ACTS);}
 // 全域 OTHER_ACTS 讓舊有程式碼繼續運作
@@ -411,11 +400,14 @@ function getActInfo(actId){
   var allActs=getOtherActs().concat(S.customActs);
   var found=allActs.filter(function(a){return a.id===actId;})[0];
   if(found)return found;
-  // 找不到（已刪除）→ 從快取取名稱
+  // 找不到 → 查已退役項目清單（硬編碼，保留完整顏色與名稱，歷史記錄正常顯示）
+  var retired=RETIRED_ACTS.filter(function(a){return a.id===actId;})[0];
+  if(retired)return retired;
+  // 再從快取找
   var cached=S.actNameCache[actId];
   if(cached){
-    return {id:actId,label:cached.label+"（已刪除）",emoji:cached.emoji||"❌",
-      color:"#9ca3af",bg:"#f3f4f6",border:"#e5e7eb"};
+    return {id:actId,label:cached.label,emoji:cached.emoji||"❓",
+      color:cached.color||"#9ca3af",bg:cached.bg||"#f3f4f6",border:cached.border||"#e5e7eb"};
   }
   // 完全找不到 → 顯示 ID
   return {id:actId,label:actId,emoji:"❓",color:"#9ca3af",bg:"#f3f4f6",border:"#e5e7eb"};
