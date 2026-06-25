@@ -75,7 +75,7 @@ body.dark textarea.inp{background:#374151;color:#f9fafb}
   <div class="hdr" style="position:relative">
     <button id="darkModeBtn" onclick="S.darkMode=!S.darkMode;persist();render();" style="position:absolute;right:12px;top:12px;background:none;border:none;font-size:22px;cursor:pointer;line-height:1">🌙</button>
     <h1>🏅 Nicole的運動日誌</h1>
-    <p>重訓 · 瑜珈 · 排舞 · 回春動功 · 超慢跑</p>
+    <p>重訓 · 瑜珈 · 回春動功 · 超慢跑</p>
     <div class="tabs" id="tabs"></div>
   </div>
   <div class="content" id="content"></div>
@@ -88,10 +88,24 @@ body.dark textarea.inp{background:#374151;color:#f9fafb}
 var GVER=4;
 var DEFAULT_OTHER_ACTS=[
   {id:"yoga",   label:"瑜珈課",  emoji:"🧘",color:"#7c3aed",bg:"#f5f3ff",border:"#ddd6fe",note:"每週五"},
-  {id:"dance",  label:"排舞",    emoji:"💃",color:"#db2777",bg:"#fdf2f8",border:"#fbcfe8",note:"週二、週三"},
   {id:"qigong", label:"回春動功",emoji:"🌿",color:"#059669",bg:"#f0fdf4",border:"#bbf7d0",note:""},
   {id:"slowrun",label:"超慢跑",  emoji:"🐢",color:"#d97706",bg:"#fffbeb",border:"#fde68a",note:""},
 ];
+// 預先寫入已移除項目的名稱快取，確保歷史記錄仍可正常顯示
+(function(){
+  var _removedActs=[
+    {id:"dance",label:"排舞",emoji:"💃",color:"#db2777",bg:"#fdf2f8",border:"#fbcfe8"}
+  ];
+  var _cache=JSON.parse(localStorage.getItem("act_name_cache")||"{}");
+  var _changed=false;
+  _removedActs.forEach(function(a){
+    if(!_cache[a.id]){
+      _cache[a.id]={label:a.label,emoji:a.emoji,color:a.color,bg:a.bg,border:a.border};
+      _changed=true;
+    }
+  });
+  if(_changed)localStorage.setItem("act_name_cache",JSON.stringify(_cache));
+})();
 // 讓 OTHER_ACTS 變成動態（從 localStorage 讀取）
 function getOtherActs(){return lsGet("other_acts_list", DEFAULT_OTHER_ACTS);}
 // 全域 OTHER_ACTS 讓舊有程式碼繼續運作
@@ -2431,8 +2445,21 @@ function renderExport(){
             if(d.customActs){S.customActs=d.customActs;lsSet("custom_acts",d.customActs);}
             if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);lsSet("ex_groups_version",GVER);}
             if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
-            if(d.actNameCache){S.actNameCache=d.actNameCache;lsSet("act_name_cache",d.actNameCache);}
-            if(d.pinnedExercises){S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);}
+            if(d.actNameCache){
+              // 合併快取（保留本機已有的已刪除項目快取）
+              S.actNameCache=Object.assign({},d.actNameCache,
+                Object.fromEntries(Object.entries(S.actNameCache).filter(function(e){return !d.actNameCache[e[0]];}))
+              );
+              lsSet("act_name_cache",S.actNameCache);
+            }
+            if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length>0){
+              // 備份有釘選內容才覆蓋，若備份是空陣列則保留本機已有的釘選
+              S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);
+            } else if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length===0&&S.pinnedExercises.length===0){
+              // 備份和本機都是空的，保持空
+              S.pinnedExercises=[];lsSet("pinned_ex",[]);
+            }
+            // 備份 pinnedExercises 為空但本機有釘選時：保留本機（不覆蓋）
             if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
             if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
             S._lastSyncTime=new Date().toISOString();
@@ -2544,7 +2571,12 @@ function renderExport(){
         if(d.customActs){S.customActs=d.customActs;lsSet("custom_acts",d.customActs);}
         if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);}
         if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
-        if(d.pinnedExercises){S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);}
+        if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length>0){
+          S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);
+        } else if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length===0&&S.pinnedExercises.length===0){
+          S.pinnedExercises=[];lsSet("pinned_ex",[]);
+        }
+        // 備份 pinnedExercises 為空但本機有釘選時：保留本機（不覆蓋）
         if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
         if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
         var cnt=(d.sessions?d.sessions.length:0)+(d.bodyData?d.bodyData.length:0)+(d.otherLogs?d.otherLogs.length:0);
