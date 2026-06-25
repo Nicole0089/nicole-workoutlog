@@ -139,12 +139,12 @@ function getTypeInfo(){return lsGet("type_info_list",DEFAULT_TYPE_INFO);}
 var CAL_ACTS_BASE=[{key:"workout",label:"重訓",color:"#2563eb"}];
 function getCalActs(){
   var acts=CAL_ACTS_BASE.slice();
-  // 取得所有運動項目（預設+自訂），用 S.customActs 確保最新狀態
+  // 取得所有運動項目（預設+自訂+已退役），確保歷史記錄的點也能顯示
   var baseActs=getOtherActs();
   var customActs=typeof S!=="undefined"?S.customActs:lsGet("custom_acts",[]);
-  // 合併並去重（以 id 為鍵）
+  // 合併並去重（以 id 為鍵），包含 RETIRED_ACTS 讓退役項目的歷史點也能顯示
   var seen={};
-  baseActs.concat(customActs).forEach(function(a){
+  baseActs.concat(customActs).concat(RETIRED_ACTS).forEach(function(a){
     if(!seen[a.id]){
       seen[a.id]=true;
       acts.push({key:a.id,label:a.label,color:a.color||"#6b7280"});
@@ -833,11 +833,11 @@ function renderOther(){
       l.activities.forEach(function(item){
         var id=typeof item==="object"?item.id:item;
         var cnt=typeof item==="object"?item.count:1;
-        var a=allActsR.filter(function(x){return x.id===id;})[0];
-        if(a){
+        var a=allActsR.filter(function(x){return x.id===id;})[0]||getActInfo(id);
+
           var tagTxt=a.emoji+" "+a.label+(cnt>1?" ×"+cnt:"");
           tags.appendChild(el("span",{style:{background:a.bg,color:a.color,border:"1px solid "+a.border,borderRadius:"6px",padding:"2px 8px",fontSize:"12px",fontWeight:600}},tagTxt));
-        }
+
       });
       left.appendChild(tags);
       // 顯示備註
