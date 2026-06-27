@@ -540,10 +540,10 @@ var S={
   prevMap:{},showAddEx:false,newExName:"",newExGrp:"upper",showManageEx:false,histFilter:"all",
   bDate:today(),bWt:"",bFat:"",bWaist:"",bHip:"",bMood:"",bHeight:"",bMuscle:"",bNote:"",editBodyDate:null,
   noteSearch:"",noteSearchType:"all",noteSearchDate:"",
-  oDate:today(),oSel:[],oNote:"",editODate:null,oStatsMonth:todayMonth(),showManage:false,newActName:"",newActEmoji:"⭐",showManageType:false,newTypeName:"",newTypeEmoji:"💪",
+  oDate:today(),oSel:[],oNote:"",editODate:null,oStatsMonth:todayMonth(),showManage:false,newActName:"",newActEmoji:"⭐",newActNote:"",showManageType:false,newTypeName:"",newTypeEmoji:"💪",
   diaryText:"",diaryLogs:lsGet("diary_logs",[]),
   showDiary:false,
-  mDate:today(),mSel:[],mNote:"",mDuration:"",mBodyParts:[],mTension:0,editMDate:null,showMassage:true,showManageMassage:false,newMassageName:"",newMassageEmoji:"💆",editingActId:null,editingActName:"",editingActEmoji:"",editingMassageId:null,editingMassageName:"",editingMassageEmoji:"",editingExGid:null,editingExOld:"",editingExNew:"",editingTypeKey:null,editingTypeName:"",editingTypeEmoji:"",
+  mDate:today(),mSel:[],mNote:"",mDuration:"",mBodyParts:[],mTension:0,editMDate:null,showMassage:true,showManageMassage:false,newMassageName:"",newMassageEmoji:"💆",editingActId:null,editingActName:"",editingActEmoji:"",editingActNote:"",editingMassageId:null,editingMassageName:"",editingMassageEmoji:"",editingExGid:null,editingExOld:"",editingExNew:"",editingTypeKey:null,editingTypeName:"",editingTypeEmoji:"",
   pinnedExercises:lsGet("pinned_ex",[]),
   templates:lsGet("workout_templates",[]),  // 訓練模板
   darkMode:lsGet("dark_mode",false),  // 深色模式
@@ -690,20 +690,22 @@ function renderOther(){
       var eNameInp=el("input",{cls:"inp",style:{flex:1},value:S.editingActName,oninput:function(e){S.editingActName=e.target.value;}});
       var eSaveBtn=el("button",{cls:"btn-p",style:{padding:"9px 12px"},onclick:function(){
         var newName=S.editingActName.trim();if(!newName)return;
-        var updated=getOtherActs().map(function(x){return x.id===S.editingActId?Object.assign({},x,{label:newName,emoji:S.editingActEmoji||x.emoji}):x;});
+        var updated=getOtherActs().map(function(x){return x.id===S.editingActId?Object.assign({},x,{label:newName,emoji:S.editingActEmoji||x.emoji,note:S.editingActNote}):x;});
         // 也更新 customActs
-        S.customActs=S.customActs.map(function(x){return x.id===S.editingActId?Object.assign({},x,{label:newName,emoji:S.editingActEmoji||x.emoji}):x;});
+        S.customActs=S.customActs.map(function(x){return x.id===S.editingActId?Object.assign({},x,{label:newName,emoji:S.editingActEmoji||x.emoji,note:S.editingActNote}):x;});
         lsSet("other_acts_list",updated);S.editingActId=null;persist();render();
       }},"儲存");
       var eCancelBtn=el("button",{style:{background:"#f3f4f6",border:"none",borderRadius:"10px",padding:"9px 12px",cursor:"pointer",color:"#374151"},onclick:function(){S.editingActId=null;render();}},"取消");
       eRow.appendChild(eEmojiInp);eRow.appendChild(eNameInp);eRow.appendChild(eSaveBtn);eRow.appendChild(eCancelBtn);
       editBox.appendChild(eRow);
+      var eNoteInp=el("input",{cls:"inp",style:{marginTop:"6px",width:"100%",boxSizing:"border-box"},placeholder:"備註（如：每週五，選填）",value:S.editingActNote,oninput:function(e){S.editingActNote=e.target.value;}});
+      editBox.appendChild(eNoteInp);
       items.appendChild(editBox);
     }
     curOtherActs.forEach(function(a){
       var sp=el("span",{cls:"manage-item",style:{background:a.bg,border:"1px solid "+a.border}});
       sp.appendChild(el("span",{style:{color:a.color,fontWeight:700}},a.emoji+" "+a.label));
-      sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#2563eb",cursor:"pointer",fontSize:"12px",marginLeft:"4px"},onclick:(function(aa){return function(){S.editingActId=aa.id;S.editingActName=aa.label;S.editingActEmoji=aa.emoji;render();};})(a)},"✏️"));
+      sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#2563eb",cursor:"pointer",fontSize:"12px",marginLeft:"4px"},onclick:(function(aa){return function(){S.editingActId=aa.id;S.editingActName=aa.label;S.editingActEmoji=aa.emoji;S.editingActNote=aa.note||"";render();};})(a)},"✏️"));
       sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"13px",fontWeight:700,marginLeft:"2px"},onclick:(function(aa){return function(){
         var updated=getOtherActs().filter(function(x){return x.id!==aa.id;});
         lsSet("other_acts_list",updated);render();
@@ -713,7 +715,7 @@ function renderOther(){
     S.customActs.forEach(function(a){
       var sp=el("span",{cls:"manage-item"});
       sp.appendChild(document.createTextNode(a.emoji+" "+a.label));
-      sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#2563eb",cursor:"pointer",fontSize:"12px",marginLeft:"4px"},onclick:(function(aa){return function(){S.editingActId=aa.id;S.editingActName=aa.label;S.editingActEmoji=aa.emoji;render();};})(a)},"✏️"));
+      sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#2563eb",cursor:"pointer",fontSize:"12px",marginLeft:"4px"},onclick:(function(aa){return function(){S.editingActId=aa.id;S.editingActName=aa.label;S.editingActEmoji=aa.emoji;S.editingActNote=aa.note||"";render();};})(a)},"✏️"));
       sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"13px",fontWeight:700,marginLeft:"2px"},onclick:(function(aa){return function(){S.customActs=S.customActs.filter(function(x){return x.id!==aa.id;});persist();render();};})(a)},"✕"));
       items.appendChild(sp);
     });
@@ -726,12 +728,14 @@ function renderOther(){
     var ni=el("input",{cls:"inp",style:{flex:1},placeholder:"運動名稱（如：羽球）",value:S.newActName,oninput:function(e){S.newActName=e.target.value;}});
     var ab=el("button",{cls:"btn-p",style:{padding:"9px 14px"},onclick:function(){
       var n=S.newActName.trim();if(!n)return;
-      var newAct={id:"c"+Date.now(),label:n,emoji:S.newActEmoji||"⭐",color:"#6b7280",bg:"#f3f4f6",border:"#e5e7eb",note:""};
+      var newAct={id:"c"+Date.now(),label:n,emoji:S.newActEmoji||"⭐",color:"#6b7280",bg:"#f3f4f6",border:"#e5e7eb",note:S.newActNote||""};
       S.customActs.push(newAct);
-      S.newActName="";S.newActEmoji="⭐";persist();render();
+      S.newActName="";S.newActEmoji="⭐";S.newActNote="";persist();render();
     }},"新增");
     ar.appendChild(ei);ar.appendChild(ni);ar.appendChild(ab);
     mb.appendChild(ar);
+    var noteRow=el("input",{cls:"inp",style:{marginTop:"6px",width:"100%",boxSizing:"border-box"},placeholder:"備註（如：每週二，選填）",value:S.newActNote||"",oninput:function(e){S.newActNote=e.target.value;}});
+    mb.appendChild(noteRow);
     card.appendChild(mb);
   }
 
