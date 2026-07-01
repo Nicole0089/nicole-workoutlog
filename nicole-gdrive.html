@@ -1913,8 +1913,8 @@ function renderChart(){
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"體脂趨勢（%）"));
     chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.fat!=null;}).map(function(d){return{date:d.date,value:d.fat};}),"#7c3aed","%"));
   } else if(S.chartType==="muscle"){
-    chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"骨骼肌趨勢（kg）"));
-    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.muscle!=null;}).map(function(d){return{date:d.date,value:d.muscle};}),"#059669","kg"));
+    chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"骨骼肌趨勢（%）"));
+    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.muscle!=null;}).map(function(d){return{date:d.date,value:d.muscle};}),"#059669","%"));
   } else if(S.chartType==="waist"){
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"腰圍趨勢（cm）"));
     chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.waist!=null;}).map(function(d){return{date:d.date,value:d.waist};}),"#059669","cm"));
@@ -2104,7 +2104,7 @@ function renderBody(){
   var hInp=el("input",{type:"number",cls:"inp",placeholder:"165",value:S.bHeight});
   hInp.addEventListener("input",function(e){S.bHeight=e.target.value;updateCalc();});
   hd.appendChild(hInp);r3.appendChild(hd);
-  var md=el("div",{style:{flex:1}});md.appendChild(el("div",{cls:"lbl"},"💪 骨骼肌(kg)"));
+  var md=el("div",{style:{flex:1}});md.appendChild(el("div",{cls:"lbl"},"💪 骨骼肌(%)"));
   var mInp=el("input",{type:"number",cls:"inp",placeholder:"28.0",value:S.bMuscle});
   mInp.addEventListener("input",function(e){S.bMuscle=e.target.value;});
   md.appendChild(mInp);r3.appendChild(md);
@@ -2341,7 +2341,7 @@ function renderBody(){
         vals.appendChild(el("span",{style:{color:"#2563eb",fontWeight:600}},"⚖️ "+d.weight+"kg"+(bmi2?" (BMI "+bmi2+")":" ")));
       }
       if(d.fat!=null)vals.appendChild(el("span",{style:{color:"#7c3aed",fontWeight:600}},"🔥 "+d.fat+"%"));
-      if(d.muscle!=null)vals.appendChild(el("span",{style:{color:"#059669",fontWeight:600}},"💪 "+d.muscle+"kg"));
+      if(d.muscle!=null)vals.appendChild(el("span",{style:{color:"#059669",fontWeight:600}},"💪 "+d.muscle+"%"));
       if(d.waist!=null){
         var whr2=d.hip?(d.waist/d.hip).toFixed(2):null;
         vals.appendChild(el("span",{style:{color:"#16a34a",fontWeight:600}},"📏 腰"+d.waist+(whr2?" 臀"+d.hip+" (WHR "+whr2+")":(d.hip?" 臀"+d.hip:""))+"cm"));
@@ -2745,7 +2745,7 @@ function exportExcelWorkbook(allActs){
   sheet2["!cols"]=[{wch:12},{wch:6},{wch:14},{wch:6}];
   XLSX.utils.book_append_sheet(wb,sheet2,"其他運動");
   var ws3=[["Nicole的運動日誌 - 身體數據"],[],
-    ["日期","星期","體重(kg)","體脂(%)","骨骼肌(kg)","腰圍(cm)","臀圍(cm)","身高(cm)","BMI","腰臀比","心情","備註"]];
+    ["日期","星期","體重(kg)","體脂(%)","骨骼肌(%)","腰圍(cm)","臀圍(cm)","身高(cm)","BMI","腰臀比","心情","備註"]];
   S.bodyData.forEach(function(d){
     var dow="週"+dayNames[new Date(d.date).getDay()];
     var bmi=d.weight&&d.height?+(d.weight/((d.height/100)*(d.height/100))).toFixed(1):"";
@@ -2797,7 +2797,7 @@ function doCSV(type,allActs){
     filename="運動記錄.csv";rows.push(["日期","星期","運動項目","次數","備註"]);
     S.otherLogs.forEach(function(l){var dow="週"+dayNames[new Date(l.date).getDay()];l.activities.forEach(function(item,ii){var id=typeof item==="object"?item.id:item;var cnt=typeof item==="object"?item.count:1;var a=getActInfo(id);rows.push([l.date,dow,a.label,cnt,ii===0?(l.note||""):""]);});});
   }else if(type==="body"){
-    filename="身體數據.csv";rows.push(["日期","星期","體重(kg)","體脂(%)","骨骼肌(kg)","腰圍(cm)","臀圍(cm)","身高(cm)","BMI","腰臀比","心情","備註"]);
+    filename="身體數據.csv";rows.push(["日期","星期","體重(kg)","體脂(%)","骨骼肌(%)","腰圍(cm)","臀圍(cm)","身高(cm)","BMI","腰臀比","心情","備註"]);
     S.bodyData.forEach(function(d){var dow="週"+dayNames[new Date(d.date).getDay()];var bmi=d.weight&&d.height?+(d.weight/((d.height/100)*(d.height/100))).toFixed(1):"";var whr=d.waist&&d.hip?+(d.waist/d.hip).toFixed(2):"";rows.push([d.date,dow,d.weight||"",d.fat||"",d.muscle||"",d.waist||"",d.hip||"",d.height||"",bmi,whr,moodMap[d.mood]||d.mood||"",d.note||""]);});
   }else if(type==="massage"){
     filename="按摩修復記錄.csv";rows.push(["日期","星期","使用工具","時間(分)","按摩部位","緊繃程度","備註"]);
