@@ -2066,12 +2066,15 @@ function makeBarChart(){
 
 function makeSVGChart(data,color,label,targetVal){
   if(!data||data.length<2)return el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontSize:"13px"}},"資料不足，需至少兩筆記錄");
-  var W=340,H=120,P=28;
+  // 數值格式化：整數不顯示小數點，非整數統一顯示到小數第1位
+  function fmtNum(n){var r=Math.round(n*10)/10;return (Math.abs(r-Math.round(r))<0.001)?String(Math.round(r)):r.toFixed(1);}
+  var W=360,H=210,padL=44,padR=14,padT=22,padB=32;
+  var availW=W-padL-padR,availH=H-padT-padB;
   var vals=data.map(function(d){return d.value;});
   var min=Math.min.apply(null,vals),max=Math.max.apply(null,vals),range=max-min||1;
-  var pts=data.map(function(d,i){return{x:P+(i/(data.length-1))*(W-P*2),y:P+((max-d.value)/range)*(H-P*2),date:d.date,value:d.value};});
+  var pts=data.map(function(d,i){return{x:padL+(i/(data.length-1))*availW,y:padT+((max-d.value)/range)*availH,date:d.date,value:d.value};});
   var path=pts.map(function(p,i){return(i===0?"M":"L")+p.x+","+p.y;}).join(" ");
-  var area=path+" L"+pts[pts.length-1].x+","+(H-P)+" L"+pts[0].x+","+(H-P)+" Z";
+  var area=path+" L"+pts[pts.length-1].x+","+(H-padB)+" L"+pts[0].x+","+(H-padB)+" Z";
   var NS="http://www.w3.org/2000/svg";
   function s(tag,attrs,text){var e=document.createElementNS(NS,tag);if(attrs)Object.keys(attrs).forEach(function(k){e.setAttribute(k,attrs[k]);});if(text!=null)e.textContent=text;return e;}
   var svg=s("svg",{viewBox:"0 0 "+W+" "+H,style:"width:100%;max-width:"+W+"px"});
@@ -2081,18 +2084,35 @@ function makeSVGChart(data,color,label,targetVal){
   grad.appendChild(s("stop",{"offset":"0%","stop-color":color,"stop-opacity":"0.18"}));
   grad.appendChild(s("stop",{"offset":"100%","stop-color":color,"stop-opacity":"0"}));
   defs.appendChild(grad);svg.appendChild(defs);
+  // 格線 + Y軸多段刻度（0%/25%/50%/75%/100%），頭尾刻度額外標單位
+  [0,0.25,0.5,0.75,1].forEach(function(r){
+    var gy=padT+r*availH;
+    var gv=max-r*range;
+    svg.appendChild(s("line",{x1:padL,y1:gy,x2:W-padR,y2:gy,stroke:"#f1f5f9","stroke-width":"1"}));
+    svg.appendChild(s("text",{x:padL-6,y:gy+3,"font-size":"9",fill:"#9ca3af","text-anchor":"end"},fmtNum(gv)+((r===0||r===1)?label:"")));
+  });
   svg.appendChild(s("path",{d:area,fill:"url(#"+gid+")"}));
   svg.appendChild(s("path",{d:path,fill:"none",stroke:color,"stroke-width":"2.2","stroke-linejoin":"round","stroke-linecap":"round"}));
-  pts.forEach(function(p){svg.appendChild(s("circle",{cx:p.x,cy:p.y,r:"4",fill:"white",stroke:color,"stroke-width":"2"}));});
-  svg.appendChild(s("text",{x:P,y:H-6,"font-size":"10",fill:"#9ca3af"},data[0].date));
-  svg.appendChild(s("text",{x:W-P,y:H-6,"font-size":"10",fill:"#9ca3af","text-anchor":"end"},data[data.length-1].date));
-  svg.appendChild(s("text",{x:P,y:14,"font-size":"10",fill:"#9ca3af"},max+label));
-  svg.appendChild(s("text",{x:P,y:H-P+10,"font-size":"10",fill:"#9ca3af"},min+label));
+  // 資料點：預設不顯示數值，點一下顯示該點數值，再點一下收合（觸控/滑鼠點擊皆可，用透明大圓擴大可點擊範圍）
+  pts.forEach(function(p){
+    var valTxt=null;
+    var hit=s("circle",{cx:p.x,cy:p.y,r:"11",fill:"transparent",style:"cursor:pointer"});
+    hit.addEventListener("click",function(){
+      if(valTxt){svg.removeChild(valTxt);valTxt=null;return;}
+      var ly=(p.y-padT<14)?p.y+16:p.y-10;
+      valTxt=s("text",{x:p.x,y:ly,"font-size":"11",fill:"#111827","font-weight":"700","text-anchor":"middle",stroke:"white","stroke-width":"3","paint-order":"stroke"},fmtNum(p.value));
+      svg.appendChild(valTxt);
+    });
+    svg.appendChild(hit);
+    svg.appendChild(s("circle",{cx:p.x,cy:p.y,r:"4",fill:"white",stroke:color,"stroke-width":"2"}));
+  });
+  svg.appendChild(s("text",{x:padL,y:H-10,"font-size":"10",fill:"#9ca3af"},data[0].date));
+  svg.appendChild(s("text",{x:W-padR,y:H-10,"font-size":"10",fill:"#9ca3af","text-anchor":"end"},data[data.length-1].date));
   // 目標線
   if(targetVal!=null&&targetVal>=min&&targetVal<=max){
-    var ty=P+((max-targetVal)/range)*(H-P*2);
-    svg.appendChild(s("line",{x1:P,y1:ty,x2:W-P,y2:ty,stroke:"#ef4444","stroke-width":"1.5","stroke-dasharray":"4,3"}));
-    svg.appendChild(s("text",{x:W-P,y:ty-3,"font-size":"10",fill:"#ef4444","text-anchor":"end"},"目標 "+targetVal+label));
+    var ty=padT+((max-targetVal)/range)*availH;
+    svg.appendChild(s("line",{x1:padL,y1:ty,x2:W-padR,y2:ty,stroke:"#ef4444","stroke-width":"1.5","stroke-dasharray":"4,3"}));
+    svg.appendChild(s("text",{x:W-padR,y:ty-4,"font-size":"10",fill:"#ef4444","text-anchor":"end"},"目標 "+targetVal+label));
   }
   return svg;
 }
