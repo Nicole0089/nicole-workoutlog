@@ -95,17 +95,20 @@ var DEFAULT_OTHER_ACTS=[
 var RETIRED_ACTS=[
   {id:"dance",label:"排舞",emoji:"💃",color:"#db2777",bg:"#fdf2f8",border:"#fbcfe8"},
 ];
-// 自訂運動項目的顏色色盤（避開重訓/瑜珈課/回春動功/超慢跑/排舞已使用的顏色），
-// 新增自訂項目時依序輪流指定，讓每個自訂項目在月曆/圖例上都有專屬且彼此不同的顏色
+// 自訂運動項目的顏色色盤（刻意與重訓藍#2563eb、瑜珈課紫#7c3aed、回春動功綠#059669、
+// 超慢跑橘#d97706、排舞粉#db2777 等既有5色的色相拉開足夠距離，避免看起來像同一色）；
+// 新增自訂項目時依序輪流指定，讓每個自訂項目在月曆/圖例上都有專屬且彼此不同的顏色。
+// 注意：未來若要調整色盤內容，請確保新色與這5個既有色、以及色盤內其他顏色的色相都有明顯差異，
+// 避免重蹈「回春動功(綠)」與「平板棒式(原本的藍綠)」撞色的問題。
 var CUSTOM_ACT_PALETTE=[
-  {color:"#0d9488",bg:"#f0fdfa",border:"#99f6e4"}, // 藍綠
   {color:"#dc2626",bg:"#fef2f2",border:"#fecaca"}, // 紅
-  {color:"#4f46e5",bg:"#eef2ff",border:"#c7d2fe"}, // 靛藍
+  {color:"#65a30d",bg:"#f7fee7",border:"#d9f99d"}, // 萊姆綠(黃綠，刻意與回春動功的藍綠拉開距離)
   {color:"#0891b2",bg:"#ecfeff",border:"#a5f3fc"}, // 青
-  {color:"#65a30d",bg:"#f7fee7",border:"#d9f99d"}, // 萊姆綠
-  {color:"#e11d48",bg:"#fff1f2",border:"#fecdd3"}, // 玫紅
-  {color:"#c026d3",bg:"#fdf4ff",border:"#f5d0fe"}, // 洋紅
-  {color:"#92400e",bg:"#fffbeb",border:"#fde68a"}, // 棕
+  {color:"#a21caf",bg:"#fdf4ff",border:"#f5d0fe"}, // 洋紅
+  {color:"#9a3412",bg:"#fff7ed",border:"#fed7aa"}, // 磚紅棕
+  {color:"#78716c",bg:"#fafaf9",border:"#d6d3d1"}, // 暖灰(石色)
+  {color:"#374151",bg:"#f3f4f6",border:"#d1d5db"}, // 深炭灰
+  {color:"#64748b",bg:"#f1f5f9",border:"#cbd5e1"}, // 冷灰藍
 ];
 function getCustomActColor(idx){return CUSTOM_ACT_PALETTE[idx%CUSTOM_ACT_PALETTE.length];}
 // 讓 OTHER_ACTS 變成動態（從 localStorage 讀取）
@@ -2849,19 +2852,17 @@ function doCSV(type,allActs){
   S.otherLogs=Object.keys(_dm).sort().map(function(d){return _dm[d];});
   lsSet("other_logs",S.otherLogs);
 })();
-// 3. 既有自訂運動項目顏色遷移：把仍是舊版固定灰色(#6b7280/#f3f4f6/#e5e7eb，代表從未指定過顏色)的
-//    自訂項目，依序改指定為色盤中彼此不同的顏色，讓月曆圖例/圖表中的自訂項目不再全部同一種灰色
+// 3. 自訂運動項目顏色校正：由於目前介面沒有讓使用者自行挑色的功能，
+//    每個自訂項目的顏色永遠是由 getCustomActColor(索引) 依色盤自動指定；
+//    因此每次啟動都依「目前在 S.customActs 陣列中的索引」重新對齊一次色盤，
+//    確保色盤如果之後又調整內容(例如再次發現撞色而換色)，既有的自訂項目也會自動套用新色盤，
+//    不用再另外寫一次性遷移判斷式
 (function(){
-  var _changed=false,_idx=0;
-  S.customActs=S.customActs.map(function(a){
-    var isOldGray=(a.color==="#6b7280"&&a.bg==="#f3f4f6"&&a.border==="#e5e7eb");
-    if(isOldGray){
-      var _clr=getCustomActColor(_idx);
-      _idx++;_changed=true;
-      return Object.assign({},a,{color:_clr.color,bg:_clr.bg,border:_clr.border});
-    }
-    _idx++;
-    return a;
+  var _changed=false;
+  S.customActs=S.customActs.map(function(a,idx){
+    var _clr=getCustomActColor(idx);
+    if(a.color!==_clr.color||a.bg!==_clr.bg||a.border!==_clr.border)_changed=true;
+    return Object.assign({},a,{color:_clr.color,bg:_clr.bg,border:_clr.border});
   });
   if(_changed)lsSet("custom_acts",S.customActs);
 })();
