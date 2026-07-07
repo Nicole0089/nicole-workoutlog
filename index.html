@@ -95,6 +95,19 @@ var DEFAULT_OTHER_ACTS=[
 var RETIRED_ACTS=[
   {id:"dance",label:"排舞",emoji:"💃",color:"#db2777",bg:"#fdf2f8",border:"#fbcfe8"},
 ];
+// 自訂運動項目的顏色色盤（避開重訓/瑜珈課/回春動功/超慢跑/排舞已使用的顏色），
+// 新增自訂項目時依序輪流指定，讓每個自訂項目在月曆/圖例上都有專屬且彼此不同的顏色
+var CUSTOM_ACT_PALETTE=[
+  {color:"#0d9488",bg:"#f0fdfa",border:"#99f6e4"}, // 藍綠
+  {color:"#dc2626",bg:"#fef2f2",border:"#fecaca"}, // 紅
+  {color:"#4f46e5",bg:"#eef2ff",border:"#c7d2fe"}, // 靛藍
+  {color:"#0891b2",bg:"#ecfeff",border:"#a5f3fc"}, // 青
+  {color:"#65a30d",bg:"#f7fee7",border:"#d9f99d"}, // 萊姆綠
+  {color:"#e11d48",bg:"#fff1f2",border:"#fecdd3"}, // 玫紅
+  {color:"#c026d3",bg:"#fdf4ff",border:"#f5d0fe"}, // 洋紅
+  {color:"#92400e",bg:"#fffbeb",border:"#fde68a"}, // 棕
+];
+function getCustomActColor(idx){return CUSTOM_ACT_PALETTE[idx%CUSTOM_ACT_PALETTE.length];}
 // 讓 OTHER_ACTS 變成動態（從 localStorage 讀取）
 function getOtherActs(){return lsGet("other_acts_list", DEFAULT_OTHER_ACTS);}
 // 全域 OTHER_ACTS 讓舊有程式碼繼續運作
@@ -713,8 +726,8 @@ function renderOther(){
       items.appendChild(sp);
     });
     S.customActs.forEach(function(a){
-      var sp=el("span",{cls:"manage-item"});
-      sp.appendChild(document.createTextNode(a.emoji+" "+a.label));
+      var sp=el("span",{cls:"manage-item",style:{background:a.bg||"#f3f4f6",border:"1px solid "+(a.border||"#e5e7eb")}});
+      sp.appendChild(el("span",{style:{color:a.color||"#6b7280",fontWeight:700}},a.emoji+" "+a.label));
       sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#2563eb",cursor:"pointer",fontSize:"12px",marginLeft:"4px"},onclick:(function(aa){return function(){S.editingActId=aa.id;S.editingActName=aa.label;S.editingActEmoji=aa.emoji;S.editingActNote=aa.note||"";render();};})(a)},"✏️"));
       sp.appendChild(el("button",{style:{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"13px",fontWeight:700,marginLeft:"2px"},onclick:(function(aa){return function(){S.customActs=S.customActs.filter(function(x){return x.id!==aa.id;});persist();render();};})(a)},"✕"));
       items.appendChild(sp);
@@ -728,7 +741,8 @@ function renderOther(){
     var ni=el("input",{cls:"inp",style:{flex:1},placeholder:"運動名稱（如：羽球）",value:S.newActName,oninput:function(e){S.newActName=e.target.value;}});
     var ab=el("button",{cls:"btn-p",style:{padding:"9px 14px"},onclick:function(){
       var n=S.newActName.trim();if(!n)return;
-      var newAct={id:"c"+Date.now(),label:n,emoji:S.newActEmoji||"⭐",color:"#6b7280",bg:"#f3f4f6",border:"#e5e7eb",note:S.newActNote||""};
+      var _clr=getCustomActColor(S.customActs.length);
+      var newAct={id:"c"+Date.now(),label:n,emoji:S.newActEmoji||"⭐",color:_clr.color,bg:_clr.bg,border:_clr.border,note:S.newActNote||""};
       S.customActs.push(newAct);
       S.newActName="";S.newActEmoji="⭐";S.newActNote="";persist();render();
     }},"新增");
@@ -1882,8 +1896,16 @@ function renderChart(){
     cell.appendChild(dots);grid.appendChild(cell);
   });
   calCard.appendChild(grid);
+  // 圖例只顯示「重訓」基本項目 + 當月實際有記錄的運動項目，
+  // 已退役/已刪除但當月沒有記錄的項目（如排舞在7月後已無記錄）就不再列出；
+  // 若該月確實有記錄（如6月及之前的排舞），仍會透過 CAL_ACTS(含RETIRED_ACTS) 正確顯示名稱與顏色
+  var usedIds={};
+  Object.keys(dm).forEach(function(d){dm[d].forEach(function(id){usedIds[id]=true;});});
+  var legendActs=CAL_ACTS.filter(function(a){
+    return CAL_ACTS_BASE.some(function(b){return b.key===a.key;})||usedIds[a.key];
+  });
   var legend=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"8px",marginTop:"12px"}});
-  CAL_ACTS.forEach(function(a){var li=el("div",{style:{display:"flex",alignItems:"center",gap:"4px",fontSize:"11px"}});li.appendChild(el("span",{cls:"dot",style:{background:a.color}}));li.appendChild(document.createTextNode(a.label));legend.appendChild(li);});
+  legendActs.forEach(function(a){var li=el("div",{style:{display:"flex",alignItems:"center",gap:"4px",fontSize:"11px"}});li.appendChild(el("span",{cls:"dot",style:{background:a.color}}));li.appendChild(document.createTextNode(a.label));legend.appendChild(li);});
   calCard.appendChild(legend);w.appendChild(calCard);
 
   var chartCard=el("div",{cls:"card"});
@@ -2041,7 +2063,7 @@ function makeBarChart(){
 
 function makeSVGChart(data,color,label,targetVal){
   if(!data||data.length<2)return el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontSize:"13px"}},"資料不足，需至少兩筆記錄");
-  var W=340,H=140,P=30;
+  var W=340,H=120,P=28;
   var vals=data.map(function(d){return d.value;});
   var min=Math.min.apply(null,vals),max=Math.max.apply(null,vals),range=max-min||1;
   var pts=data.map(function(d,i){return{x:P+(i/(data.length-1))*(W-P*2),y:P+((max-d.value)/range)*(H-P*2),date:d.date,value:d.value};});
@@ -2056,22 +2078,9 @@ function makeSVGChart(data,color,label,targetVal){
   grad.appendChild(s("stop",{"offset":"0%","stop-color":color,"stop-opacity":"0.18"}));
   grad.appendChild(s("stop",{"offset":"100%","stop-color":color,"stop-opacity":"0"}));
   defs.appendChild(grad);svg.appendChild(defs);
-  // 格線（25%/50%/75%）：提供數值參考刻度，方便判讀中間資料點大致落在哪個區間
-  [0.25,0.5,0.75].forEach(function(r){
-    var gy=P+(H-P*2)*r;
-    svg.appendChild(s("line",{x1:P,y1:gy,x2:W-P,y2:gy,stroke:"#f3f4f6","stroke-width":"1"}));
-  });
   svg.appendChild(s("path",{d:area,fill:"url(#"+gid+")"}));
   svg.appendChild(s("path",{d:path,fill:"none",stroke:color,"stroke-width":"2.2","stroke-linejoin":"round","stroke-linecap":"round"}));
-  // 資料點數值標籤：點數較多時自動間隔顯示，避免文字重疊看不清楚（首尾一定顯示）
-  var labelStep=Math.max(1,Math.ceil(pts.length/10));
-  pts.forEach(function(p,i){
-    svg.appendChild(s("circle",{cx:p.x,cy:p.y,r:"4",fill:"white",stroke:color,"stroke-width":"2"}));
-    if(i%labelStep===0||i===pts.length-1){
-      var above=p.y>P+14; // 點太靠近頂端時，標籤改往下放避免超出畫布
-      svg.appendChild(s("text",{x:p.x,y:above?p.y-8:p.y+15,"font-size":"9","text-anchor":"middle",fill:"#6b7280"},p.value+label));
-    }
-  });
+  pts.forEach(function(p){svg.appendChild(s("circle",{cx:p.x,cy:p.y,r:"4",fill:"white",stroke:color,"stroke-width":"2"}));});
   svg.appendChild(s("text",{x:P,y:H-6,"font-size":"10",fill:"#9ca3af"},data[0].date));
   svg.appendChild(s("text",{x:W-P,y:H-6,"font-size":"10",fill:"#9ca3af","text-anchor":"end"},data[data.length-1].date));
   svg.appendChild(s("text",{x:P,y:14,"font-size":"10",fill:"#9ca3af"},max+label));
@@ -2082,30 +2091,6 @@ function makeSVGChart(data,color,label,targetVal){
     svg.appendChild(s("line",{x1:P,y1:ty,x2:W-P,y2:ty,stroke:"#ef4444","stroke-width":"1.5","stroke-dasharray":"4,3"}));
     svg.appendChild(s("text",{x:W-P,y:ty-3,"font-size":"10",fill:"#ef4444","text-anchor":"end"},"目標 "+targetVal+label));
   }
-
-  // ── 點擊/觸摸互動：點任一資料點顯示完整日期＋數值提示框 ──
-  var tipW=94,tipH=32;
-  var tipG=s("g",{style:"opacity:0"});
-  tipG.appendChild(s("rect",{width:String(tipW),height:String(tipH),rx:"5",fill:"#1f2937","fill-opacity":"0.92"}));
-  var tipDate=s("text",{x:"8",y:"13","font-size":"10",fill:"#fff"});
-  var tipVal=s("text",{x:"8",y:"25","font-size":"11",fill:"#fff","font-weight":"700"});
-  tipG.appendChild(tipDate);tipG.appendChild(tipVal);
-  svg.appendChild(tipG);
-  pts.forEach(function(p){
-    var hit=s("circle",{cx:p.x,cy:p.y,r:"11",fill:"transparent",style:"cursor:pointer"});
-    hit.addEventListener("click",function(e){
-      e.stopPropagation();
-      tipDate.textContent=p.date;
-      tipVal.textContent=p.value+label;
-      var tx=Math.min(Math.max(p.x-tipW/2,2),W-tipW-2);
-      var ty=p.y-tipH-8; if(ty<2)ty=p.y+10;
-      tipG.setAttribute("transform","translate("+tx+","+ty+")");
-      tipG.setAttribute("style","opacity:1");
-    });
-    svg.appendChild(hit);
-  });
-  svg.addEventListener("click",function(){tipG.setAttribute("style","opacity:0");});
-
   return svg;
 }
 
@@ -2863,6 +2848,22 @@ function doCSV(type,allActs){
   S.otherLogs.forEach(function(l){_dm[l.date]=l;});
   S.otherLogs=Object.keys(_dm).sort().map(function(d){return _dm[d];});
   lsSet("other_logs",S.otherLogs);
+})();
+// 3. 既有自訂運動項目顏色遷移：把仍是舊版固定灰色(#6b7280/#f3f4f6/#e5e7eb，代表從未指定過顏色)的
+//    自訂項目，依序改指定為色盤中彼此不同的顏色，讓月曆圖例/圖表中的自訂項目不再全部同一種灰色
+(function(){
+  var _changed=false,_idx=0;
+  S.customActs=S.customActs.map(function(a){
+    var isOldGray=(a.color==="#6b7280"&&a.bg==="#f3f4f6"&&a.border==="#e5e7eb");
+    if(isOldGray){
+      var _clr=getCustomActColor(_idx);
+      _idx++;_changed=true;
+      return Object.assign({},a,{color:_clr.color,bg:_clr.bg,border:_clr.border});
+    }
+    _idx++;
+    return a;
+  });
+  if(_changed)lsSet("custom_acts",S.customActs);
 })();
 if(!S.chartEx){var allEx=DEF_GROUPS.reduce(function(a,g){return a.concat(g.exercises);},[]);S.chartEx=allEx[0]||"";}
 render();
