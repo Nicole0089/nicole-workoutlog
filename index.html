@@ -583,6 +583,7 @@ var S={
   _gdFiles:[],
   _lastSyncTime:lsGet("last_sync_time",null),
   _lastSyncCount:lsGet("last_sync_count",null),  // 上次成功同步時的本機記錄總筆數，用於偵測資料是否變少
+  _lastLocalBackupTime:lsGet("last_local_backup_time",null),  // 上次緊急本機備份(下載.json)的日期時間
   _gdEmail:lsGet("gd_account_email",null),  // 目前/上次登入的 Google 帳號 email
   // 展開/收合（預設收起）
   showMassageHistory:false,
@@ -2583,7 +2584,10 @@ function renderExport(){
     var total=getBackupRecordCount(data);
     if(total===0){notify("⚠️ 目前沒有資料可備份");return;}
     dlFile(JSON.stringify(data,null,2),"Nicole緊急備份_"+today()+".json","application/json;charset=utf-8;");
+    S._lastLocalBackupTime=new Date().toISOString();
+    lsSet("last_local_backup_time",S._lastLocalBackupTime);
     notify("✅ 緊急備份已下載（"+total+"筆記錄）");
+    render();
   }},"📥 下載備份(.json)"));
   // 緊急匯入
   var emergLabel=el("label",{style:{flex:1,background:"#fff",border:"1.5px solid #6b7280",color:"#6b7280",borderRadius:"10px",padding:"10px 0",fontSize:"13px",fontWeight:700,cursor:"pointer",textAlign:"center",display:"block"}});
@@ -2628,6 +2632,13 @@ function renderExport(){
   });
   emergLabel.appendChild(emergFi);emergBtns.appendChild(emergLabel);
   emergCard.appendChild(emergBtns);
+  // 上次本機備份時間
+  if(S._lastLocalBackupTime){
+    var lbt=new Date(S._lastLocalBackupTime);
+    emergCard.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",textAlign:"center",marginBottom:"6px"}},"🕐 上次本機備份："+lbt.toLocaleString("zh-TW")));
+  }else{
+    emergCard.appendChild(el("div",{style:{fontSize:"12px",color:"#9ca3af",textAlign:"center",marginBottom:"6px"}},"🕐 尚未進行過本機備份"));
+  }
   emergCard.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af",textAlign:"center"}},"備份檔儲存在手機下載資料夾，建議定期同步至 Google 雲端"));
   card.appendChild(emergCard);
 
