@@ -2766,7 +2766,9 @@ function exportExcelWorkbook(allActs){
   var wb=XLSX.utils.book_new();
   var dayNames=["日","一","二","三","四","五","六"];
   var moodMap={"😄":"很好","🙂":"不錯","😐":"普通","😔":"有點累","😫":"很疲憊"};
-  var ws1=[["Nicole的運動日誌 - 重訓記錄"],["匯出時間",new Date().toLocaleString("zh-TW")],[],
+  var ws1=[["Nicole的運動日誌 - 重訓記錄"],["匯出時間",new Date().toLocaleString("zh-TW")],
+    ["上次雲端備份",S._lastSyncTime?new Date(S._lastSyncTime).toLocaleString("zh-TW"):"尚未備份"],
+    ["上次本機備份",S._lastLocalBackupTime?new Date(S._lastLocalBackupTime).toLocaleString("zh-TW"):"尚未備份"],[],
     ["日期","星期","訓練類型","開始","結束","動作名稱","分類","組數","重量(kg)","次數","RPE","時間(分)","距離(km)","配速","備註"]];
   S.sessions.forEach(function(s){
     var ti=getTypeInfo()[s.type||"self"]||{label:"自主訓練"};
