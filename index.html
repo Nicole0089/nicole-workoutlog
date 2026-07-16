@@ -277,18 +277,38 @@ var GD_SCOPE="https://www.googleapis.com/auth/drive.file https://www.googleapis.
 var _gdTokenClient=null;
 var _gdInited=false;
 
+var _gdClientLoading=false;
 function initGoogleDrive(){
-  if(_gdInited||!GD_CLIENT_ID)return;
-  gapi.load("client",function(){
-    gapi.client.init({apiKey:GD_API_KEY,discoveryDocs:["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"]}).then(function(){
-      _gdInited=true;
+  if(!GD_CLIENT_ID)return;
+  // gapi client 部分：腳本已載入且尚未初始化才執行（_gdClientLoading 避免重複呼叫 gapi.load）
+  if(!_gdInited&&!_gdClientLoading&&typeof gapi!=="undefined"&&gapi.load){
+    _gdClientLoading=true;
+    gapi.load("client",function(){
+      gapi.client.init({apiKey:GD_API_KEY,discoveryDocs:["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"]}).then(function(){
+        _gdInited=true;
+      },function(){_gdClientLoading=false;});
     });
-  });
-  _gdTokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:GD_CLIENT_ID,
-    scope:GD_SCOPE,
-    callback:""
-  });
+  }
+  // tokenClient 部分：GIS 腳本已載入且尚未建立才執行
+  if(!_gdTokenClient&&typeof google!=="undefined"&&google.accounts&&google.accounts.oauth2){
+    _gdTokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:GD_CLIENT_ID,
+      scope:GD_SCOPE,
+      callback:""
+    });
+  }
+}
+// 同步流程共用的防呆：Google 元件還沒準備好時，補嘗試初始化一次；
+// 仍未就緒則回傳 false 並提示使用者稍候，避免 _gdTokenClient 為 null 時直接崩潰
+function gdReady(){
+  if(!_gdTokenClient||!_gdInited){
+    try{initGoogleDrive();}catch(e){}
+  }
+  if(!_gdTokenClient||!_gdInited||typeof gapi==="undefined"||!gapi.client){
+    notify("⚠️ Google 連線元件尚未載入完成，請稍候幾秒再試一次（網路較慢時需要一點時間）");
+    return false;
+  }
+  return true;
 }
 
 function gdSignIn(cb){
@@ -296,6 +316,7 @@ function gdSignIn(cb){
     alert("請先設定 Google API 憑證（Client ID）。請參考說明文件設定。");
     return;
   }
+  if(!gdReady())return;
   _gdTokenClient.callback=function(resp){
     if(resp.error){notify("❌ Google 登入失敗");return;}
     fetchGDriveAccountEmail();
@@ -331,6 +352,7 @@ function switchGDriveAccount(){
     alert("請先設定 Google API 憑證（Client ID）。請參考說明文件設定。");
     return;
   }
+  if(!gdReady())return;
   _gdTokenClient.callback=function(resp){
     if(resp.error){notify("❌ Google 登入失敗");return;}
     fetchGDriveAccountEmail();
@@ -2971,16 +2993,19 @@ function doCSV(type,allActs){
 })();
 if(!S.chartEx){var allEx=DEF_GROUPS.reduce(function(a,g){return a.concat(g.exercises);},[]);S.chartEx=allEx[0]||"";}
 render();
-// 延遲初始化 Google Drive（等 gapi 載入完成）
-setTimeout(function(){
-  try{
-    if(typeof gapi!=="undefined"&&typeof google!=="undefined"){
+// 延遲初始化 Google Drive：改為輪詢重試（每秒檢查一次，最多30次），
+// 避免網路慢時 gapi/gsi 腳本超過2秒才載入完成，導致原本「只試一次」的初始化永遠沒執行
+(function waitGoogleScripts(tries){
+  if(typeof gapi!=="undefined"&&typeof google!=="undefined"&&google.accounts&&google.accounts.oauth2){
+    try{
       initGoogleDrive();
       // 初始化完成後 3 秒再檢查自動同步
       setTimeout(autoSyncBackup, 3000);
-    }
-  }catch(e){}
-}, 2000);
+    }catch(e){}
+    return;
+  }
+  if(tries<30){setTimeout(function(){waitGoogleScripts(tries+1);},1000);}
+})(0);
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
