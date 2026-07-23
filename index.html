@@ -221,6 +221,206 @@ function getBackupRecordCount(d){
   return(d.sessions?d.sessions.length:0)+(d.bodyData?d.bodyData.length:0)+(d.otherLogs?d.otherLogs.length:0)+(d.massageLogs?d.massageLogs.length:0);
 }
 
+// ── 備份檔完整性校驗 ──
+// canonicalStringify：物件鍵值一律依字母排序後再字串化，確保「鍵的順序不同但內容相同」時仍算出相同結果，
+// 避免手動編輯/不同JSON.stringify實作造成誤判為「毀損」
+function canonicalStringify(obj){
+  if(obj===null||typeof obj!=="object")return JSON.stringify(obj);
+  if(Array.isArray(obj))return"["+obj.map(canonicalStringify).join(",")+"]";
+  var keys=Object.keys(obj).sort();
+  return"{"+keys.map(function(k){return JSON.stringify(k)+":"+canonicalStringify(obj[k]);}).join(",")+"}";
+}
+// 簡易32位元滾動雜湊，僅用於偵測「備份檔內容是否在建立後被更動/損毀」，非加密安全用途
+function computeChecksum(obj){
+  var s=canonicalStringify(obj);
+  var h=0;
+  for(var i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}
+  return h;
+}
+// 驗證備份物件d的checksum欄位：沒有checksum欄位(舊版備份)視為無法校驗，直接放行；
+// 有checksum但比對不符才視為可能毀損/被修改，回傳false讓呼叫端自行決定是否要confirm()詢問使用者
+function verifyBackupChecksum(d){
+  if(d.checksum==null)return true;
+  var check=Object.assign({},d);delete check.checksum;
+  return computeChecksum(check)===d.checksum;
+}
+
+// 產生帶時間戳記的「緊急本機備份」檔名，例如 Nicole緊急備份_2026-07-23_14-05-30.json
+// 每次下載都是不同檔名，手機/電腦下載資料夾自然就會累積多個版本，不會被同名覆蓋
+function localBackupFilename(){
+  var d=new Date();
+  function p2(n){return(n<10?"0":"")+n;}
+  return"Nicole緊急備份_"+d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate())+"_"+p2(d.getHours())+"-"+p2(d.getMinutes())+"-"+p2(d.getSeconds())+".json";
+}
+
+// ── 合併還原(多裝置合併用)：不覆蓋本機既有資料，只把備份裡「本機沒有」或「本機該欄位是空的」內容補進本機 ──
+// 鍵值規則：sessions以id為鍵；otherLogs/bodyData/massageLogs以date為鍵(每天最多一筆，符合各自的saveXxx()寫入規則)；
+// customActs/groups/templates以id為鍵；pinnedExercises取聯集；actNameCache合併(本機已有的key優先)；
+// goals/bodyTargetWeight/reminders僅在本機該項仍是預設/空值時才採用備份內容，避免覆蓋使用者在本機已設定的偏好
+function mergeBackupData(d){
+  var stats={sessionsAdded:0,otherLogsAdded:0,otherLogsMerged:0,bodyDataAdded:0,bodyDataMerged:0,massageAdded:0,massageMerged:0};
+
+  if(Array.isArray(d.sessions)){
+    var localIds={};S.sessions.forEach(function(s){localIds[s.id]=true;});
+    d.sessions.forEach(function(s){if(!localIds[s.id]){S.sessions.push(s);stats.sessionsAdded++;}});
+    S.sessions.sort(function(a,b){return a.date.localeCompare(b.date);});
+    lsSet("sessions",S.sessions);
+  }
+
+  if(Array.isArray(d.otherLogs)){
+    var localOByDate={};S.otherLogs.forEach(function(l){localOByDate[l.date]=l;});
+    d.otherLogs.forEach(function(l){
+      var loc=localOByDate[l.date];
+      if(!loc){S.otherLogs.push(l);localOByDate[l.date]=l;stats.otherLogsAdded++;}
+      else{
+        var actMap={};
+        (loc.activities||[]).forEach(function(a){actMap[a.id]=a.count||1;});
+        (l.activities||[]).forEach(function(a){actMap[a.id]=Math.max(actMap[a.id]||0,a.count||1);});
+        loc.activities=Object.keys(actMap).map(function(id){return{id:id,count:actMap[id]};});
+        if(l.note&&l.note!==loc.note){loc.note=loc.note?loc.note+"\n---\n"+l.note:l.note;}
+        stats.otherLogsMerged++;
+      }
+    });
+    S.otherLogs.sort(function(a,b){return a.date.localeCompare(b.date);});
+    lsSet("other_logs",S.otherLogs);
+  }
+
+  if(Array.isArray(d.bodyData)){
+    var localBByDate={};S.bodyData.forEach(function(b){localBByDate[b.date]=b;});
+    d.bodyData.forEach(function(b){
+      var loc=localBByDate[b.date];
+      if(!loc){S.bodyData.push(b);localBByDate[b.date]=b;stats.bodyDataAdded++;}
+      else{
+        ["weight","fat","waist","hip","muscle","height","mood"].forEach(function(f){
+          if(loc[f]==null&&b[f]!=null)loc[f]=b[f];
+        });
+        if(b.note&&b.note!==loc.note){loc.note=loc.note?loc.note+"\n---\n"+b.note:b.note;}
+        stats.bodyDataMerged++;
+      }
+    });
+    S.bodyData.sort(function(a,b){return a.date.localeCompare(b.date);});
+    lsSet("body",S.bodyData);
+  }
+
+  if(Array.isArray(d.massageLogs)){
+    var localMByDate={};S.massageLogs.forEach(function(m){localMByDate[m.date]=m;});
+    d.massageLogs.forEach(function(m){
+      var loc=localMByDate[m.date];
+      if(!loc){S.massageLogs.push(m);localMByDate[m.date]=m;stats.massageAdded++;}
+      else{
+        var toolSet={};(loc.tools||[]).forEach(function(t){toolSet[t]=true;});(m.tools||[]).forEach(function(t){toolSet[t]=true;});
+        loc.tools=Object.keys(toolSet);
+        var partSet={};(loc.bodyParts||[]).forEach(function(p){partSet[p]=true;});(m.bodyParts||[]).forEach(function(p){partSet[p]=true;});
+        loc.bodyParts=Object.keys(partSet);
+        if(!loc.duration&&m.duration)loc.duration=m.duration;
+        if(!loc.tension&&m.tension)loc.tension=m.tension;
+        if(m.note&&m.note!==loc.note){loc.note=loc.note?loc.note+"\n---\n"+m.note:m.note;}
+        stats.massageMerged++;
+      }
+    });
+    S.massageLogs.sort(function(a,b){return a.date.localeCompare(b.date);});
+    lsSet("massage_logs",S.massageLogs);
+  }
+
+  if(Array.isArray(d.customActs)){
+    var localActIds={};S.customActs.forEach(function(a){localActIds[a.id]=true;});
+    d.customActs.forEach(function(a){if(!localActIds[a.id])S.customActs.push(a);});
+    lsSet("custom_acts",S.customActs);
+  }
+
+  if(Array.isArray(d.groups)){
+    var localGById={};S.groups.forEach(function(g){localGById[g.id]=g;});
+    d.groups.forEach(function(g){
+      var loc=localGById[g.id];
+      if(!loc){S.groups.push(g);localGById[g.id]=g;}
+      else{
+        var exSet={};(loc.exercises||[]).forEach(function(e){exSet[e]=true;});(g.exercises||[]).forEach(function(e){exSet[e]=true;});
+        loc.exercises=Object.keys(exSet);
+      }
+    });
+    lsSet("ex_groups_v2",S.groups);
+  }
+
+  if(Array.isArray(d.templates)){
+    var localTIds={};S.templates.forEach(function(t){localTIds[t.id]=true;});
+    d.templates.forEach(function(t){if(!localTIds[t.id])S.templates.push(t);});
+    lsSet("workout_templates",S.templates);
+  }
+
+  if(d.actNameCache){
+    S.actNameCache=Object.assign({},d.actNameCache,S.actNameCache);
+    lsSet("act_name_cache",S.actNameCache);
+  }
+
+  if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length>0){
+    var pinSet={};S.pinnedExercises.forEach(function(p){pinSet[p]=true;});d.pinnedExercises.forEach(function(p){pinSet[p]=true;});
+    S.pinnedExercises=Object.keys(pinSet);
+    lsSet("pinned_ex",S.pinnedExercises);
+  }
+
+  if(d.goals&&!S.goals.monthlyWorkout&&!S.goals.targetDate){S.goals=d.goals;lsSet("workout_goals",S.goals);}
+  if(d.bodyTargetWeight!=null&&S.bodyTargetWeight==null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",S.bodyTargetWeight);}
+  if(Array.isArray(d.reminders)&&d.reminders.length&&(!S.reminders||!S.reminders.length)){S.reminders=d.reminders;lsSet("reminders",S.reminders);}
+
+  return stats;
+}
+
+// ── 套用一份已解析的備份物件到本機(Google雲端還原/緊急本機還原共用) ──
+// mode="overwrite"：完整覆蓋(原有行為)，會先跳「筆數變少」防呆confirm
+// mode="merge"：呼叫mergeBackupData()只新增/補值，不會刪除任何本機既有資料，故不需要筆數變少防呆
+// updateSyncMeta：是否更新_lastSyncTime/_lastSyncCount(雲端還原/合併=true；緊急本機還原=false，維持原有「以上次雲端同步為準」的比對基準)
+function applyRestoredBackup(d,mode,updateSyncMeta){
+  if(mode==="merge"){
+    var stats=mergeBackupData(d);
+    if(updateSyncMeta){
+      S._lastSyncTime=new Date().toISOString();S._lastSyncCount=getBackupRecordCount(S);
+      lsSet("last_sync_time",S._lastSyncTime);lsSet("last_sync_count",S._lastSyncCount);
+    }
+    notify("✅ 合併完成！新增 重訓"+stats.sessionsAdded+"筆、運動"+stats.otherLogsAdded+"筆(另合併同日"+stats.otherLogsMerged+"筆)、身體"+stats.bodyDataAdded+"筆(另合併同日"+stats.bodyDataMerged+"筆)、按摩"+stats.massageAdded+"筆(另合併同日"+stats.massageMerged+"筆)");
+    render();
+    return;
+  }
+  // mode==="overwrite"
+  var incomingCount=getBackupRecordCount(d);
+  var localCount=getBackupRecordCount(S);
+  if(incomingCount<localCount){
+    var warnMsg=incomingCount===0
+      ?"⚠️ 這份備份內沒有任何記錄，還原將清空本機目前的"+localCount+"筆記錄，確定要繼續嗎？"
+      :"這份備份只有"+incomingCount+"筆記錄，比本機目前的"+localCount+"筆少，還原後本機資料會被取代，確定要繼續嗎？";
+    if(!confirm(warnMsg)){notify("已取消還原");return;}
+  }
+  var count=0;
+  if(d.sessions){S.sessions=d.sessions;lsSet("sessions",d.sessions);count+=d.sessions.length;}
+  if(d.bodyData){S.bodyData=d.bodyData;lsSet("body",d.bodyData);count+=d.bodyData.length;}
+  if(d.otherLogs){S.otherLogs=d.otherLogs;lsSet("other_logs",d.otherLogs);count+=d.otherLogs.length;}
+  if(d.massageLogs){S.massageLogs=d.massageLogs;lsSet("massage_logs",d.massageLogs);}
+  if(d.reminders){S.reminders=d.reminders;lsSet("reminders",d.reminders);}
+  if(d.customActs){S.customActs=d.customActs;lsSet("custom_acts",d.customActs);}
+  if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);lsSet("ex_groups_version",GVER);}
+  if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
+  if(d.actNameCache){
+    // 合併快取（保留本機已有的已刪除項目快取）
+    S.actNameCache=Object.assign({},d.actNameCache,
+      Object.fromEntries(Object.entries(S.actNameCache).filter(function(e){return !d.actNameCache[e[0]];}))
+    );
+    lsSet("act_name_cache",S.actNameCache);
+  }
+  if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length>0){
+    S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);
+  } else if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length===0&&S.pinnedExercises.length===0){
+    S.pinnedExercises=[];lsSet("pinned_ex",[]);
+  }
+  // 備份 pinnedExercises 為空但本機有釘選時：保留本機（不覆蓋）
+  if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
+  if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
+  if(updateSyncMeta){
+    S._lastSyncTime=new Date().toISOString();S._lastSyncCount=getBackupRecordCount(S);
+    lsSet("last_sync_time",S._lastSyncTime);lsSet("last_sync_count",S._lastSyncCount);
+  }
+  notify("✅ 還原成功！共"+count+"筆記錄");
+  render();
+}
+
 function el(tag,attrs){
   var e=document.createElement(tag);
   if(attrs){
@@ -2541,6 +2741,7 @@ function renderExport(){
   var gdRow=el("div",{style:{display:"flex",gap:"8px",marginBottom:"8px"}});
   gdRow.appendChild(el("button",{style:{flex:1,background:"#fff",border:"1.5px solid #0f9d58",color:"#0f9d58",borderRadius:"10px",padding:"12px 0",fontSize:"13px",fontWeight:700,cursor:"pointer"},onclick:function(){
     var data={version:1,exportedAt:new Date().toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache,pinnedExercises:S.pinnedExercises,goals:S.goals,bodyTargetWeight:S.bodyTargetWeight};
+    data.checksum=computeChecksum(data);
     // 確認有資料才同步(含重訓/身體數據/其他運動/按摩修復)
     var totalRecords=getBackupRecordCount(data);
     if(totalRecords===0){
@@ -2578,9 +2779,8 @@ function renderExport(){
     var gdList=el("div",{style:{background:"#f8fafc",border:"1px solid #e5e7eb",borderRadius:"10px",padding:"10px",marginBottom:"8px"}});
     gdList.appendChild(el("div",{style:{fontWeight:700,fontSize:"13px",marginBottom:"8px"}},"選擇要還原的備份"));
     S._gdFiles.forEach(function(f){
-      var fr=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #f3f4f6",cursor:"pointer"},onclick:(function(ff){return function(){
+      var restoreGDriveFile=function(ff,mode){
         S._showGDList=false;notify("☁️ 下載中…");
-        notify("☁️ 下載備份中...");
         downloadFromGDrive(ff.id,function(body){
           try{
             if(!body||body.length===0){
@@ -2593,62 +2793,33 @@ function renderExport(){
               notify("❌ 格式不正確，version欄位遺失");
               return;
             }
-            // 防呆：若即將還原的筆數比本機現有筆數還少(含0筆)，先請使用者確認，避免誤點覆蓋
-            var incomingCount=getBackupRecordCount(d);
-            var localCount=getBackupRecordCount(S);
-            if(incomingCount<localCount){
-              var warnMsg=incomingCount===0
-                ?"⚠️ 這份雲端備份內沒有任何記錄，還原將清空本機目前的"+localCount+"筆記錄，確定要繼續嗎？"
-                :"這份雲端備份只有"+incomingCount+"筆記錄，比本機目前的"+localCount+"筆少，還原後本機資料會被取代，確定要繼續嗎？";
-              if(!confirm(warnMsg)){
+            // 完整性校驗：舊版備份沒有checksum欄位視為無法校驗、直接放行；
+            // 有checksum但比對不符，代表下載/儲存過程可能損毀或檔案曾被修改過，讓使用者自行決定是否仍要冒險還原
+            if(!verifyBackupChecksum(d)){
+              if(!confirm("⚠️ 這份備份檔案的內容校驗碼不符，可能已損毀或被修改過，資料正確性無法保證。確定要仍然嘗試還原嗎？")){
                 notify("已取消還原");
                 return;
               }
             }
-            var count=0;
-            if(d.sessions){S.sessions=d.sessions;lsSet("sessions",d.sessions);count+=d.sessions.length;}
-            if(d.bodyData){S.bodyData=d.bodyData;lsSet("body",d.bodyData);count+=d.bodyData.length;}
-            if(d.otherLogs){S.otherLogs=d.otherLogs;lsSet("other_logs",d.otherLogs);count+=d.otherLogs.length;}
-            if(d.massageLogs){S.massageLogs=d.massageLogs;lsSet("massage_logs",d.massageLogs);}
-            if(d.reminders){S.reminders=d.reminders;lsSet("reminders",d.reminders);}
-            if(d.customActs){S.customActs=d.customActs;lsSet("custom_acts",d.customActs);}
-            if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);lsSet("ex_groups_version",GVER);}
-            if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
-            if(d.actNameCache){
-              // 合併快取（保留本機已有的已刪除項目快取）
-              S.actNameCache=Object.assign({},d.actNameCache,
-                Object.fromEntries(Object.entries(S.actNameCache).filter(function(e){return !d.actNameCache[e[0]];}))
-              );
-              lsSet("act_name_cache",S.actNameCache);
-            }
-            if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length>0){
-              // 備份有釘選內容才覆蓋，若備份是空陣列則保留本機已有的釘選
-              S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);
-            } else if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length===0&&S.pinnedExercises.length===0){
-              // 備份和本機都是空的，保持空
-              S.pinnedExercises=[];lsSet("pinned_ex",[]);
-            }
-            // 備份 pinnedExercises 為空但本機有釘選時：保留本機（不覆蓋）
-            if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
-            if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
-            S._lastSyncTime=new Date().toISOString();
-            S._lastSyncCount=getBackupRecordCount(S);
-            lsSet("last_sync_time",S._lastSyncTime);
-            lsSet("last_sync_count",S._lastSyncCount);
-            notify("✅ 還原成功！共"+count+"筆記錄");
-            render();
+            applyRestoredBackup(d,mode,true);
           }catch(e){
             notify("❌ 還原失敗："+e.message);
             console.error("Restore error:",e,"Body:",body?body.slice(0,200):"empty");
           }
         });
-      };})(f)});
+      };
+      var fr=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #f3f4f6"}});
       var fLeft=el("div",{});
       var fTimeStr=f.modifiedTime?new Date(f.modifiedTime).toLocaleString("zh-TW"):"";
       fLeft.appendChild(el("div",{style:{fontSize:"13px",fontWeight:600,color:"#374151"}},fTimeStr||f.name));
       fLeft.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af"}},f.name));
       fr.appendChild(fLeft);
-      fr.appendChild(el("span",{style:{fontSize:"12px",color:"#4285f4"}},"選擇 →"));
+      var fActions=el("div",{style:{display:"flex",alignItems:"center",gap:"12px"}});
+      fActions.appendChild(el("span",{style:{fontSize:"12px",color:"#0891b2",cursor:"pointer",whiteSpace:"nowrap"},onclick:(function(ff){return function(){
+        if(confirm("合併模式只會把這份備份裡「本機沒有」的記錄與欄位補進來，不會刪除或取代本機現有資料，確定要合併嗎？"))restoreGDriveFile(ff,"merge");
+      };})(f)},"🔀合併"));
+      fActions.appendChild(el("span",{style:{fontSize:"12px",color:"#4285f4",cursor:"pointer",whiteSpace:"nowrap"},onclick:(function(ff){return function(){restoreGDriveFile(ff,"overwrite");};})(f)},"選擇 →"));
+      fr.appendChild(fActions);
       gdList.appendChild(fr);
     });
     gdList.appendChild(el("button",{style:{fontSize:"12px",color:"#6b7280",background:"none",border:"none",cursor:"pointer",marginTop:"6px"},onclick:function(){S._showGDList=false;render();}},"✕ 取消"));
@@ -2694,13 +2865,14 @@ function renderExport(){
       uploadExcelToGDrive(blob,"Nicole運動日誌報表.xlsx");
     }catch(err){notify("❌ Excel 產生失敗："+err.message);}
   }},"☁️ 同步 Excel 至 Google 雲端"));
-  // 上次 Excel 同步至雲端的時間
+  // 上次 Excel 同步至雲端的時間（純本機顯示，換裝置/清除瀏覽器資料後會重新計算，不代表雲端資料遺失）
   if(S._lastExcelSyncTime){
     var est=new Date(S._lastExcelSyncTime);
-    card.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",textAlign:"center",marginBottom:"4px"}},"🕐 上次 Excel 備份："+est.toLocaleString("zh-TW")));
+    card.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",textAlign:"center",marginBottom:"2px"}},"🕐 上次 Excel 備份："+est.toLocaleString("zh-TW")));
   }else{
-    card.appendChild(el("div",{style:{fontSize:"12px",color:"#9ca3af",textAlign:"center",marginBottom:"4px"}},"🕐 尚未同步過 Excel 報表"));
+    card.appendChild(el("div",{style:{fontSize:"12px",color:"#9ca3af",textAlign:"center",marginBottom:"2px"}},"🕐 尚未同步過 Excel 報表"));
   }
+  card.appendChild(el("div",{style:{fontSize:"10px",color:"#d1d5db",textAlign:"center",marginBottom:"4px"}},"（僅記錄本裝置；換裝置或清除瀏覽器資料後會重新計算，不代表雲端備份遺失）"));
   card.appendChild(el("div",{style:{fontSize:"11px",color:"#dc2626",marginBottom:"8px"}},"⚠️ 此檔案無法用於還原資料，請使用上方「Google 雲端硬碟」備份。"));
 
   // ── CSV 備用 ──
@@ -2715,9 +2887,10 @@ function renderExport(){
   // 緊急匯出
   emergBtns.appendChild(el("button",{style:{flex:1,background:"#fff",border:"1.5px solid #6b7280",color:"#6b7280",borderRadius:"10px",padding:"10px 0",fontSize:"13px",fontWeight:700,cursor:"pointer"},onclick:function(){
     var data={version:1,exportedAt:new Date().toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache,pinnedExercises:S.pinnedExercises,goals:S.goals,bodyTargetWeight:S.bodyTargetWeight};
+    data.checksum=computeChecksum(data);
     var total=getBackupRecordCount(data);
     if(total===0){notify("⚠️ 目前沒有資料可備份");return;}
-    dlFile(JSON.stringify(data,null,2),"Nicole緊急備份_"+today()+".json","application/json;charset=utf-8;");
+    dlFile(JSON.stringify(data,null,2),localBackupFilename(),"application/json;charset=utf-8;");
     S._lastLocalBackupTime=new Date().toISOString();
     lsSet("last_local_backup_time",S._lastLocalBackupTime);
     notify("✅ 緊急備份已下載（"+total+"筆記錄）");
@@ -2734,46 +2907,54 @@ function renderExport(){
       try{
         var d=JSON.parse(ev.target.result);
         if(!d.version){notify("❌ 檔案格式不正確");return;}
-        // 防呆：若即將匯入的筆數比本機現有筆數還少(含0筆)，先請使用者確認，避免誤蓋本機既有記錄
-        var incomingCount=getBackupRecordCount(d);
-        var localCount=getBackupRecordCount(S);
-        if(incomingCount<localCount){
-          var warnMsg=incomingCount===0
-            ?"⚠️ 這份備份檔案內沒有任何記錄，還原將清空本機目前的"+localCount+"筆記錄，確定要繼續嗎？"
-            :"這份備份檔案只有"+incomingCount+"筆記錄，比本機目前的"+localCount+"筆少，還原後本機資料會被取代，確定要繼續嗎？";
-          if(!confirm(warnMsg)){notify("已取消還原");return;}
+        // 完整性校驗：舊版備份沒有checksum欄位視為無法校驗、直接放行；
+        // 有checksum但比對不符，代表檔案傳輸/儲存過程可能損毀或曾被修改過，讓使用者自行決定是否仍要冒險還原
+        if(!verifyBackupChecksum(d)){
+          if(!confirm("⚠️ 這份備份檔案的內容校驗碼不符，可能已損毀或被修改過，資料正確性無法保證。確定要仍然嘗試還原嗎？")){
+            notify("已取消還原");return;
+          }
         }
-        if(d.sessions){S.sessions=d.sessions;lsSet("sessions",d.sessions);}
-        if(d.bodyData){S.bodyData=d.bodyData;lsSet("body",d.bodyData);}
-        if(d.otherLogs){S.otherLogs=d.otherLogs;lsSet("other_logs",d.otherLogs);}
-        if(d.massageLogs){S.massageLogs=d.massageLogs;lsSet("massage_logs",d.massageLogs);}
-        if(d.customActs){S.customActs=d.customActs;lsSet("custom_acts",d.customActs);}
-        if(d.groups){S.groups=d.groups;lsSet("ex_groups_v2",d.groups);}
-        if(d.templates){S.templates=d.templates;lsSet("workout_templates",d.templates);}
-        if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length>0){
-          S.pinnedExercises=d.pinnedExercises;lsSet("pinned_ex",d.pinnedExercises);
-        } else if(Array.isArray(d.pinnedExercises)&&d.pinnedExercises.length===0&&S.pinnedExercises.length===0){
-          S.pinnedExercises=[];lsSet("pinned_ex",[]);
-        }
-        // 備份 pinnedExercises 為空但本機有釘選時：保留本機（不覆蓋）
-        if(d.goals){S.goals=d.goals;lsSet("workout_goals",d.goals);}
-        if(d.bodyTargetWeight!=null){S.bodyTargetWeight=d.bodyTargetWeight;lsSet("body_target_wt",d.bodyTargetWeight);}
-        var cnt=(d.sessions?d.sessions.length:0)+(d.bodyData?d.bodyData.length:0)+(d.otherLogs?d.otherLogs.length:0);
-        notify("✅ 還原成功！共"+cnt+"筆記錄");render();
+        // updateSyncMeta傳false：緊急本機還原刻意不更新_lastSyncCount/_lastSyncTime，
+        // 讓「與雲端同步」的比對基準維持不變(與改版前行為一致)
+        applyRestoredBackup(d,"overwrite",false);
       }catch(err){notify("❌ 還原失敗："+err.message);}
     };
     reader.readAsText(file);e.target.value="";
   });
   emergLabel.appendChild(emergFi);emergBtns.appendChild(emergLabel);
   emergCard.appendChild(emergBtns);
-  // 上次本機備份時間
+  // 合併還原：只新增本機沒有的記錄/欄位，不覆蓋、不刪除本機既有資料，適合「兩台裝置都各自記錄過」的情境
+  var emergMergeLabel=el("label",{style:{display:"block",background:"#fff",border:"1.5px solid #0891b2",color:"#0891b2",borderRadius:"10px",padding:"9px 0",fontSize:"12px",fontWeight:700,cursor:"pointer",textAlign:"center",marginBottom:"10px"}});
+  emergMergeLabel.textContent="🔀 合併還原（不覆蓋本機，僅補進本機沒有的記錄）";
+  var emergMergeFi=el("input",{type:"file",accept:".json",style:{display:"none"}});
+  emergMergeFi.addEventListener("change",function(e){
+    var file=e.target.files&&e.target.files[0];if(!file)return;
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      try{
+        var d=JSON.parse(ev.target.result);
+        if(!d.version){notify("❌ 檔案格式不正確");return;}
+        if(!verifyBackupChecksum(d)){
+          if(!confirm("⚠️ 這份備份檔案的內容校驗碼不符，可能已損毀或被修改過，資料正確性無法保證。確定要仍然嘗試合併嗎？")){
+            notify("已取消合併");return;
+          }
+        }
+        applyRestoredBackup(d,"merge",false);
+      }catch(err){notify("❌ 合併失敗："+err.message);}
+    };
+    reader.readAsText(file);e.target.value="";
+  });
+  emergMergeLabel.appendChild(emergMergeFi);
+  emergCard.appendChild(emergMergeLabel);
+  // 上次本機備份時間（純本機顯示，換裝置/清除瀏覽器資料後會重新計算，不代表資料遺失）
   if(S._lastLocalBackupTime){
     var lbt=new Date(S._lastLocalBackupTime);
-    emergCard.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",textAlign:"center",marginBottom:"6px"}},"🕐 上次本機備份："+lbt.toLocaleString("zh-TW")));
+    emergCard.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",textAlign:"center",marginBottom:"4px"}},"🕐 上次本機備份："+lbt.toLocaleString("zh-TW")));
   }else{
-    emergCard.appendChild(el("div",{style:{fontSize:"12px",color:"#9ca3af",textAlign:"center",marginBottom:"6px"}},"🕐 尚未進行過本機備份"));
+    emergCard.appendChild(el("div",{style:{fontSize:"12px",color:"#9ca3af",textAlign:"center",marginBottom:"4px"}},"🕐 尚未進行過本機備份"));
   }
-  emergCard.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af",textAlign:"center"}},"備份檔儲存在手機下載資料夾，建議定期同步至 Google 雲端"));
+  emergCard.appendChild(el("div",{style:{fontSize:"10px",color:"#d1d5db",textAlign:"center",marginBottom:"6px"}},"（僅記錄本裝置；換裝置或清除瀏覽器資料後會重新計算，不代表資料遺失）"));
+  emergCard.appendChild(el("div",{style:{fontSize:"11px",color:"#9ca3af",textAlign:"center"}},"備份檔儲存在手機下載資料夾，檔名已含日期時間，每次下載都是新檔案不會覆蓋舊版，建議定期同步至 Google 雲端"));
   card.appendChild(emergCard);
 
   card.appendChild(el("div",{style:{fontWeight:700,fontSize:"13px",color:"#9ca3af",marginBottom:"6px",marginTop:"16px",borderTop:"1px solid #f3f4f6",paddingTop:"14px"}},"📄 匯出 CSV（備用）"));
@@ -2797,6 +2978,7 @@ function autoSyncBackup(){
   // 確認 gapi 已載入
   if(typeof gapi==="undefined"||typeof google==="undefined")return;
   var data={version:1,exportedAt:now.toISOString(),sessions:S.sessions,bodyData:S.bodyData,otherLogs:S.otherLogs,massageLogs:S.massageLogs,reminders:S.reminders,customActs:S.customActs,groups:S.groups,templates:S.templates,actNameCache:S.actNameCache,pinnedExercises:S.pinnedExercises,goals:S.goals,bodyTargetWeight:S.bodyTargetWeight};
+  data.checksum=computeChecksum(data);
   // 確認有資料才自動同步(含重訓/身體數據/其他運動/按摩修復)
   var autoTotal=getBackupRecordCount(data);
   if(autoTotal===0)return;
