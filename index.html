@@ -2067,7 +2067,12 @@ function renderChart(){
       else val=sets.reduce(function(t,s2){return t+(+s2.weight*+s2.reps);},0);
       return{date:s.date,value:val};
     }).filter(function(d){return d.value>0;});
-    chartCard.appendChild(makeSVGChart(exData,cg?cg.color:"#059669",metricUnit));
+    // 依日期排序後只取最近15筆，避免長期累積記錄後圖表點數過多、每筆日期標示彼此重疊
+    exData.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+    if(exData.length>15)exData=exData.slice(-15);
+    // 依筆數動態加寬圖表：確保每點間距至少32px方便手機點擊，超過原本360寬時圖表區可左右滑動查看
+    var exChartW=Math.max(360,44+14+(exData.length-1)*32);
+    chartCard.appendChild(makeSVGChart(exData,cg?cg.color:"#059669",metricUnit,null,true,exChartW));
   }
   w.appendChild(chartCard);
   // 月統計
@@ -2131,11 +2136,13 @@ function makeBarChart(){
   return wrap;
 }
 
-function makeSVGChart(data,color,label,targetVal){
+function makeSVGChart(data,color,label,targetVal,showDate,chartWidth){
   if(!data||data.length<2)return el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontSize:"13px"}},"資料不足，需至少兩筆記錄");
   // 數值格式化：整數不顯示小數點，非整數統一顯示到小數第1位
   function fmtNum(n){var r=Math.round(n*10)/10;return (Math.abs(r-Math.round(r))<0.001)?String(Math.round(r)):r.toFixed(1);}
-  var W=360,H=210,padL=44,padR=14,padT=22,padB=32;
+  // 日期簡短格式："YYYY-MM-DD" → "MM/DD"，供showDate=true時點擊標示使用
+  function fmtDate(d){return d?d.slice(5).replace("-","/"):"";}
+  var W=chartWidth||360,H=210,padL=44,padR=14,padT=22,padB=32;
   var availW=W-padL-padR,availH=H-padT-padB;
   var vals=data.map(function(d){return d.value;});
   var min=Math.min.apply(null,vals),max=Math.max.apply(null,vals),range=max-min||1;
@@ -2144,7 +2151,7 @@ function makeSVGChart(data,color,label,targetVal){
   var area=path+" L"+pts[pts.length-1].x+","+(H-padB)+" L"+pts[0].x+","+(H-padB)+" Z";
   var NS="http://www.w3.org/2000/svg";
   function s(tag,attrs,text){var e=document.createElementNS(NS,tag);if(attrs)Object.keys(attrs).forEach(function(k){e.setAttribute(k,attrs[k]);});if(text!=null)e.textContent=text;return e;}
-  var svg=s("svg",{viewBox:"0 0 "+W+" "+H,style:"width:100%;max-width:"+W+"px"});
+  var svg=s("svg",{viewBox:"0 0 "+W+" "+H,style:(W>360?("width:"+W+"px;flex-shrink:0;display:block"):("width:100%;max-width:"+W+"px"))});
   var defs=s("defs");
   var gid="g"+color.replace("#","");
   var grad=s("linearGradient",{id:gid,x1:"0",y1:"0",x2:"0",y2:"1"});
@@ -2167,7 +2174,8 @@ function makeSVGChart(data,color,label,targetVal){
     hit.addEventListener("click",function(){
       if(valTxt){svg.removeChild(valTxt);valTxt=null;return;}
       var ly=(p.y-padT<14)?p.y+16:p.y-10;
-      valTxt=s("text",{x:p.x,y:ly,"font-size":"11",fill:"#111827","font-weight":"700","text-anchor":"middle",stroke:"white","stroke-width":"3","paint-order":"stroke"},fmtNum(p.value));
+      var txt=showDate?(fmtDate(p.date)+" "+fmtNum(p.value)):fmtNum(p.value);
+      valTxt=s("text",{x:p.x,y:ly,"font-size":"11",fill:"#111827","font-weight":"700","text-anchor":"middle",stroke:"white","stroke-width":"3","paint-order":"stroke"},txt);
       svg.appendChild(valTxt);
     });
     svg.appendChild(hit);
@@ -2180,6 +2188,11 @@ function makeSVGChart(data,color,label,targetVal){
     var ty=padT+((max-targetVal)/range)*availH;
     svg.appendChild(s("line",{x1:padL,y1:ty,x2:W-padR,y2:ty,stroke:"#ef4444","stroke-width":"1.5","stroke-dasharray":"4,3"}));
     svg.appendChild(s("text",{x:W-padR,y:ty-4,"font-size":"10",fill:"#ef4444","text-anchor":"end"},"目標 "+targetVal+label));
+  }
+  if(W>360){
+    var scrollWrap=el("div",{style:{overflowX:"auto",WebkitOverflowScrolling:"touch",paddingBottom:"4px"}});
+    scrollWrap.appendChild(svg);
+    return scrollWrap;
   }
   return svg;
 }
