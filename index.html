@@ -622,10 +622,8 @@ var S={
   sDate:today(),sStart:"",sEnd:"",sType:"self",sNote:"",rows:[newRow()],editSid:null,
   prevMap:{},showAddEx:false,newExName:"",newExGrp:"upper",showManageEx:false,histFilter:"all",
   bDate:today(),bWt:"",bFat:"",bWaist:"",bHip:"",bMood:"",bHeight:"",bMuscle:"",bNote:"",editBodyDate:null,
-  noteSearch:"",noteSearchType:"all",noteSearchDate:"",
+  noteSearch:"",noteSearchType:"all",noteSearchDate:"",noteViewMode:"search",
   oDate:today(),oSel:[],oNote:"",editODate:null,oStatsMonth:todayMonth(),showManage:false,newActName:"",newActEmoji:"⭐",newActNote:"",showManageType:false,newTypeName:"",newTypeEmoji:"💪",
-  diaryText:"",diaryLogs:lsGet("diary_logs",[]),
-  showDiary:false,
   mDate:today(),mSel:[],mNote:"",mDuration:"",mBodyParts:[],mTension:0,editMDate:null,showMassage:true,showManageMassage:false,newMassageName:"",newMassageEmoji:"💆",editingActId:null,editingActName:"",editingActEmoji:"",editingActNote:"",editingMassageId:null,editingMassageName:"",editingMassageEmoji:"",editingExGid:null,editingExOld:"",editingExNew:"",editingTypeKey:null,editingTypeName:"",editingTypeEmoji:"",
   pinnedExercises:lsGet("pinned_ex",[]),
   templates:lsGet("workout_templates",[]),  // 訓練模板
@@ -665,7 +663,7 @@ function persist(){
   lsSet("ex_groups_v2",S.groups);lsSet("ex_groups_version",GVER);
   lsSet("sessions",S.sessions);lsSet("body",S.bodyData);
   lsSet("other_logs",S.otherLogs);lsSet("massage_logs",S.massageLogs);
-  lsSet("reminders",S.reminders);lsSet("custom_acts",S.customActs);lsSet("diary_logs",S.diaryLogs);
+  lsSet("reminders",S.reminders);lsSet("custom_acts",S.customActs);
   lsSet("pinned_ex",S.pinnedExercises);lsSet("body_target_wt",S.bodyTargetWeight);
   lsSet("workout_templates",S.templates);
   lsSet("dark_mode",S.darkMode);
@@ -2345,119 +2343,149 @@ function renderBody(){
   w.appendChild(fc);
 
   // ── 歷史數據 ──
-  // ── 備註搜尋索引 ──
+  // ── 備註搜尋 / 日記整合檢視 ──
   var sc=el("div",{cls:"card"});
-  sc.appendChild(el("div",{style:{fontWeight:700,fontSize:"15px",marginBottom:"4px"}},"🔍 備註搜尋"));
-  sc.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"10px"}},"搜尋運動備註、訓練備註、身體備註、按摩備註"));
-  // 搜尋類型
+  var scHdr=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px",flexWrap:"wrap",gap:"6px"}});
+  scHdr.appendChild(el("div",{style:{fontWeight:700,fontSize:"15px"}},S.noteViewMode==="diary"?"📔 備註日記檢視":"🔍 備註搜尋"));
+  var modeBtns=el("div",{style:{display:"flex",gap:"6px"}});
+  [["search","🔍 搜尋"],["diary","📔 日記檢視"]].forEach(function(m){
+    var on=S.noteViewMode===m[0];
+    modeBtns.appendChild(el("button",{style:{border:"none",borderRadius:"20px",padding:"4px 12px",fontSize:"12px",fontWeight:600,cursor:"pointer",background:on?"#2563eb":"#f3f4f6",color:on?"#fff":"#374151"},onclick:function(){S.noteViewMode=m[0];render();}},m[1]));
+  });
+  scHdr.appendChild(modeBtns);
+  sc.appendChild(scHdr);
+  sc.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"10px"}},S.noteViewMode==="diary"?"把運動、訓練、身體、按摩四種備註，依日期整合成時間軸":"搜尋運動備註、訓練備註、身體備註、按摩備註"));
+  // 分類篩選（搜尋／日記兩種模式共用）
   var stRow=el("div",{style:{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}});
   [["all","全部"],["exercise","運動備註"],["workout","訓練備註"],["body","身體備註"],["massage","按摩備註"]].forEach(function(t){
     var on=S.noteSearchType===t[0];
     stRow.appendChild(el("button",{style:{border:"none",borderRadius:"20px",padding:"5px 14px",fontSize:"12px",fontWeight:600,cursor:"pointer",background:on?"#2563eb":"#f3f4f6",color:on?"#fff":"#374151"},onclick:function(){S.noteSearchType=t[0];render();}},t[1]));
   });
   sc.appendChild(stRow);
-  // 搜尋列（關鍵字 + 日期）
-  var srRow=el("div",{style:{display:"flex",gap:"8px",marginBottom:"12px"}});
-  var srInp=el("input",{cls:"inp",style:{flex:2},placeholder:"輸入關鍵字搜尋…",value:S.noteSearch,oninput:function(e){S.noteSearch=e.target.value;render();}});
-  srRow.appendChild(srInp);
-  var srDate=el("input",{type:"date",cls:"inp",style:{flex:1},value:S.noteSearchDate||"",onchange:function(e){S.noteSearchDate=e.target.value;render();}});
-  srRow.appendChild(srDate);
-  sc.appendChild(srRow);
-  // 清除按鈕
-  if(S.noteSearch||S.noteSearchDate){
-    var clearBtn=el("button",{style:{fontSize:"12px",color:"#6b7280",background:"none",border:"1px solid #e5e7eb",borderRadius:"8px",padding:"4px 10px",cursor:"pointer",marginBottom:"12px"},onclick:function(){S.noteSearch="";S.noteSearchDate="";render();}},"✕ 清除搜尋");
-    sc.appendChild(clearBtn);
-  }
-  // 搜尋結果
-  if(S.noteSearch.trim()||S.noteSearchDate){
-    var kw=S.noteSearch.trim().toLowerCase();
-    var results=[];
-    // 搜尋運動備註
+  // 共用：依目前 noteSearchType 彙整四種備註來源；kw/dateFilter 皆留空時，只要求該筆本身有備註內容(hasContent)
+  function gatherNoteEntries(kw,dateFilter){
+    var out=[];
     if(S.noteSearchType==="all"||S.noteSearchType==="exercise"){
       S.otherLogs.filter(function(l){
         var matchKw=kw?(l.note&&l.note.toLowerCase().indexOf(kw)>=0):true;
-        var matchDate=S.noteSearchDate?(l.date===S.noteSearchDate):true;
+        var matchDate=dateFilter?(l.date===dateFilter):true;
         var hasContent=kw?true:(l.note&&l.note.length>0);
         return matchKw&&matchDate&&(kw||hasContent);
       }).forEach(function(l){
         var allActs2=OTHER_ACTS.concat(S.customActs);
         var actNames=l.activities.map(function(item){var id=typeof item==="object"?item.id:item;var a=allActs2.filter(function(x){return x.id===id;})[0];return a?a.label:id;}).join("、");
-        results.push({date:l.date,type:"運動",typeColor:"#059669",typeBg:"#f0fdf4",content:actNames,note:l.note});
+        out.push({date:l.date,type:"運動",typeColor:"#059669",typeBg:"#f0fdf4",content:actNames,note:l.note});
       });
     }
-    // 搜尋訓練備註
     if(S.noteSearchType==="all"||S.noteSearchType==="workout"){
       S.sessions.filter(function(s){
         var matchKw=kw?(s.note&&s.note.toLowerCase().indexOf(kw)>=0):true;
-        var matchDate=S.noteSearchDate?(s.date===S.noteSearchDate):true;
+        var matchDate=dateFilter?(s.date===dateFilter):true;
         var hasContent=kw?true:(s.note&&s.note.length>0);
         return matchKw&&matchDate&&(kw||hasContent);
       }).forEach(function(s){
         var ti=getTypeInfo()[s.type||"self"]||{label:"自主訓練"};
-        results.push({date:s.date,type:"重訓",typeColor:"#2563eb",typeBg:"#eff6ff",content:ti.label,note:s.note});
+        out.push({date:s.date,type:"重訓",typeColor:"#2563eb",typeBg:"#eff6ff",content:ti.label,note:s.note});
       });
     }
-    // 搜尋身體備註
     if(S.noteSearchType==="all"||S.noteSearchType==="body"){
       S.bodyData.filter(function(d){
         var matchKw=kw?(d.note&&d.note.toLowerCase().indexOf(kw)>=0):true;
-        var matchDate=S.noteSearchDate?(d.date===S.noteSearchDate):true;
+        var matchDate=dateFilter?(d.date===dateFilter):true;
         var hasContent=kw?true:(d.note&&d.note.length>0);
         return matchKw&&matchDate&&(kw||hasContent);
       }).forEach(function(d){
-        results.push({date:d.date,type:"身體",typeColor:"#7c3aed",typeBg:"#f5f3ff",content:"體重"+(d.weight?d.weight+"kg":""),note:d.note});
+        out.push({date:d.date,type:"身體",typeColor:"#7c3aed",typeBg:"#f5f3ff",content:"體重"+(d.weight?d.weight+"kg":""),note:d.note});
       });
     }
-    // 搜尋按摩備註
     if(S.noteSearchType==="all"||S.noteSearchType==="massage"){
       S.massageLogs.filter(function(l){
         var matchKw=kw?(l.note&&l.note.toLowerCase().indexOf(kw)>=0):true;
-        var matchDate=S.noteSearchDate?(l.date===S.noteSearchDate):true;
+        var matchDate=dateFilter?(l.date===dateFilter):true;
         var hasContent=kw?true:(l.note&&l.note.length>0);
         return matchKw&&matchDate&&(kw||hasContent);
       }).forEach(function(l){
         var tools=l.tools.map(function(id){var t=MASSAGE.filter(function(x){return x.id===id;})[0];return t?t.label:id;}).join("、");
-        results.push({date:l.date,type:"按摩",typeColor:"#0891b2",typeBg:"#f0f9ff",content:tools,note:l.note});
+        out.push({date:l.date,type:"按摩",typeColor:"#0891b2",typeBg:"#f0f9ff",content:tools,note:l.note});
       });
     }
-    // 排序（日期由新到舊）
-    results.sort(function(a,b){return b.date.localeCompare(a.date);});
-    if(results.length===0){
-      sc.appendChild(el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"20px 0",fontSize:"13px"}},"找不到含有「"+S.noteSearch+"」的備註"));
-    } else {
-      sc.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"8px"}},"共找到 "+results.length+" 筆"));
-      results.forEach(function(r){
-        var rCard=el("div",{style:{padding:"10px",borderRadius:"10px",border:"1px solid #e5e7eb",marginBottom:"8px",background:"#fafafa"}});
-        var rTop=el("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}});
-        rTop.appendChild(el("span",{style:{background:r.typeBg,color:r.typeColor,border:"1px solid",borderRadius:"6px",padding:"1px 8px",fontSize:"11px",fontWeight:700}},r.type));
-        rTop.appendChild(el("span",{style:{fontSize:"12px",color:"#6b7280",fontWeight:600}},r.date));
-        if(r.content)rTop.appendChild(el("span",{style:{fontSize:"12px",color:"#374151"}},r.content));
-        rCard.appendChild(rTop);
-        // 高亮關鍵字
-        var noteText=r.note;
-        var noteEl=el("div",{style:{fontSize:"13px",color:"#374151",lineHeight:1.6,background:"#fffbeb",borderRadius:"6px",padding:"6px 10px",wordBreak:"break-word",overflowWrap:"break-word"}});
-        // 簡單高亮（分割後重組）
-        var escapedKw=kw.replace(/[.*+?^${}()|\[\]\\]/g,"\\$&");var parts=noteText.split(new RegExp("("+escapedKw+")","gi"));
-        parts.forEach(function(p){
-          if(p.toLowerCase()===kw){
-            var span=document.createElement("span");
-            span.style.background="#fef08a";
-            span.style.color="#92400e";
-            span.style.fontWeight="700";
-            span.style.borderRadius="2px";
-            span.style.padding="0 2px";
-            span.textContent=p;
-            noteEl.appendChild(span);
-          } else {
-            noteEl.appendChild(document.createTextNode(p));
-          }
-        });
-        rCard.appendChild(noteEl);
-        sc.appendChild(rCard);
+    return out;
+  }
+  // 共用：單筆備註卡片渲染；kw非空時高亮關鍵字(搜尋模式)，kw為空則純文字顯示(日記模式)
+  function renderNoteCard(r,kw){
+    var rCard=el("div",{style:{padding:"10px",borderRadius:"10px",border:"1px solid #e5e7eb",marginBottom:"8px",background:"#fafafa"}});
+    var rTop=el("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}});
+    rTop.appendChild(el("span",{style:{background:r.typeBg,color:r.typeColor,border:"1px solid",borderRadius:"6px",padding:"1px 8px",fontSize:"11px",fontWeight:700}},r.type));
+    rTop.appendChild(el("span",{style:{fontSize:"12px",color:"#6b7280",fontWeight:600}},r.date));
+    if(r.content)rTop.appendChild(el("span",{style:{fontSize:"12px",color:"#374151"}},r.content));
+    rCard.appendChild(rTop);
+    var noteText=r.note;
+    var noteEl=el("div",{style:{fontSize:"13px",color:"#374151",lineHeight:1.6,background:"#fffbeb",borderRadius:"6px",padding:"6px 10px",wordBreak:"break-word",overflowWrap:"break-word"}});
+    if(kw){
+      var escapedKw=kw.replace(/[.*+?^${}()|\[\]\\]/g,"\\$&");var parts=noteText.split(new RegExp("("+escapedKw+")","gi"));
+      parts.forEach(function(p){
+        if(p.toLowerCase()===kw){
+          var span=document.createElement("span");
+          span.style.background="#fef08a";
+          span.style.color="#92400e";
+          span.style.fontWeight="700";
+          span.style.borderRadius="2px";
+          span.style.padding="0 2px";
+          span.textContent=p;
+          noteEl.appendChild(span);
+        } else {
+          noteEl.appendChild(document.createTextNode(p));
+        }
       });
+    } else {
+      noteEl.appendChild(document.createTextNode(noteText));
+    }
+    rCard.appendChild(noteEl);
+    return rCard;
+  }
+  if(S.noteViewMode==="search"){
+    // 搜尋列（關鍵字 + 日期）
+    var srRow=el("div",{style:{display:"flex",gap:"8px",marginBottom:"12px"}});
+    var srInp=el("input",{cls:"inp",style:{flex:2},placeholder:"輸入關鍵字搜尋…",value:S.noteSearch,oninput:function(e){S.noteSearch=e.target.value;render();}});
+    srRow.appendChild(srInp);
+    var srDate=el("input",{type:"date",cls:"inp",style:{flex:1},value:S.noteSearchDate||"",onchange:function(e){S.noteSearchDate=e.target.value;render();}});
+    srRow.appendChild(srDate);
+    sc.appendChild(srRow);
+    // 清除按鈕
+    if(S.noteSearch||S.noteSearchDate){
+      var clearBtn=el("button",{style:{fontSize:"12px",color:"#6b7280",background:"none",border:"1px solid #e5e7eb",borderRadius:"8px",padding:"4px 10px",cursor:"pointer",marginBottom:"12px"},onclick:function(){S.noteSearch="";S.noteSearchDate="";render();}},"✕ 清除搜尋");
+      sc.appendChild(clearBtn);
+    }
+    // 搜尋結果
+    if(S.noteSearch.trim()||S.noteSearchDate){
+      var kw=S.noteSearch.trim().toLowerCase();
+      var results=gatherNoteEntries(kw,S.noteSearchDate);
+      results.sort(function(a,b){return b.date.localeCompare(a.date);});
+      if(results.length===0){
+        sc.appendChild(el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"20px 0",fontSize:"13px"}},"找不到含有「"+S.noteSearch+"」的備註"));
+      } else {
+        sc.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"8px"}},"共找到 "+results.length+" 筆"));
+        results.forEach(function(r){sc.appendChild(renderNoteCard(r,kw));});
+      }
+    } else {
+      sc.appendChild(el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"16px 0",fontSize:"13px"}},"輸入關鍵字或選擇日期開始搜尋"));
     }
   } else {
-    sc.appendChild(el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"16px 0",fontSize:"13px"}},"輸入關鍵字或選擇日期開始搜尋"));
+    // 日記整合檢視：不套用關鍵字/日期篩選，僅依 noteSearchType 分類篩選，
+    // 彙整所有「本身有備註內容」的記錄，依日期分組、由新到舊排列成時間軸
+    var diaryEntries=gatherNoteEntries("","");
+    if(diaryEntries.length===0){
+      sc.appendChild(el("div",{style:{textAlign:"center",color:"#9ca3af",padding:"20px 0",fontSize:"13px"}},"尚無備註記錄，在運動、重訓、身體或按摩記錄裡寫下備註後，這裡就會自動整理成日記"));
+    } else {
+      var byDate={};
+      diaryEntries.forEach(function(r){if(!byDate[r.date])byDate[r.date]=[];byDate[r.date].push(r);});
+      var dateKeys=Object.keys(byDate).sort().reverse();
+      sc.appendChild(el("div",{style:{fontSize:"12px",color:"#6b7280",marginBottom:"10px"}},"共 "+dateKeys.length+" 天、"+diaryEntries.length+" 則備註"));
+      dateKeys.forEach(function(dk){
+        sc.appendChild(el("div",{style:{fontWeight:700,fontSize:"13px",color:"#374151",marginTop:"14px",marginBottom:"8px",paddingBottom:"4px",borderBottom:"1px solid #e5e7eb"}},"📅 "+dk));
+        byDate[dk].forEach(function(r){sc.appendChild(renderNoteCard(r,""));});
+      });
+    }
   }
   w.appendChild(sc);
 
