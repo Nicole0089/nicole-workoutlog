@@ -164,6 +164,12 @@ var WORKOUT_TYPE_PALETTE=[
   {color:"#475569",bg:"#f8fafc",border:"#e2e8f0"},  // 深灰藍
 ];
 function getWorkoutTypeColor(idx){return WORKOUT_TYPE_PALETTE[idx%WORKOUT_TYPE_PALETTE.length];}
+// 雲端備份保留策略常數(供pruneOldGDriveBackups()使用)：
+// GD_BACKUP_RECENT_KEEP：無條件保留最新幾份雲端備份(不看日期，單純依修改時間排序取前幾筆)
+// GD_BACKUP_MONTHLY_KEEP：月度長期存檔最多回溯保留幾個月(依年月分組，只留最近這幾個月份的存檔，更舊的月份不再保留)
+// 之後若想調整保留份數/月數，只需修改這兩個數字即可，不需更動函式邏輯
+var GD_BACKUP_RECENT_KEEP=5;
+var GD_BACKUP_MONTHLY_KEEP=6;
 // CAL_ACTS 改為動態，根據目前訓練類型+運動項目產生。
 // 重訓不再是單一藍點，而是依訓練類型(自主/團體/教練/居家...)各自一個「方點」(shape:"square"，key為"wt_"+類型key)，
 // 方點與其他運動的圓點在形狀上區隔，即使色相接近(如團體課綠 vs 回春動功綠)也能在月曆上分辨
@@ -369,10 +375,13 @@ function gdBackupFilename(){
   return"Nicole運動日誌備份_"+d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate())+"_"+p2(d.getHours())+"-"+p2(d.getMinutes())+"-"+p2(d.getSeconds())+".json";
 }
 
-// 只保留最新 maxKeep 份雲端備份，超過的舊版本自動刪除，避免Drive檔案無限累積
+// 保留規則：無條件保留最新 recentKeep 份(預設GD_BACKUP_RECENT_KEEP) +
+// 最近 GD_BACKUP_MONTHLY_KEEP 個月，每月額外保留「當月最早一份」(最接近月初/1號)作長期月度存檔
+// 兩規則各自選取後合併(用id去重)，故某些月份可能同時被規則1與規則2選中而不只留1份，屬預期行為
+// 超過GD_BACKUP_MONTHLY_KEEP個月的更舊月份，即使該月只有1份備份也會被視為「更舊」一併刪除
 // 刪除失敗(例如權限不足)時靜默忽略，不影響本次同步是否成功
-function pruneOldGDriveBackups(maxKeep){
-  maxKeep=maxKeep||6;
+function pruneOldGDriveBackups(recentKeep){
+  recentKeep=recentKeep||GD_BACKUP_RECENT_KEEP;
   gdSignIn(function(){
     gapi.client.drive.files.list({
       q:"name contains '運動日誌備份' and trashed=false",
@@ -381,9 +390,20 @@ function pruneOldGDriveBackups(maxKeep){
       pageSize:50
     }).then(function(r){
       var files=r.result.files||[];
-      if(files.length<=maxKeep)return;
-      files.slice(maxKeep).forEach(function(f){
-        gapi.client.drive.files.delete({fileId:f.id}).catch(function(){});
+      if(files.length<=recentKeep)return;
+      var keepIds={};
+      // 規則1：最新recentKeep份無條件保留(files已依modifiedTime desc排序)
+      files.slice(0,recentKeep).forEach(function(f){keepIds[f.id]=true;});
+      // 規則2：依modifiedTime所屬年月分組，每組保留該月最早(最接近月初)的一份；
+      // 分組後依年月新到舊排序，只取最近GD_BACKUP_MONTHLY_KEEP組，更舊的月份不列入保留(即會被刪除)
+      var byMonth={};
+      files.forEach(function(f){
+        var ym=f.modifiedTime.slice(0,7); // "YYYY-MM"
+        if(!byMonth[ym]||f.modifiedTime<byMonth[ym].modifiedTime){byMonth[ym]=f;}
+      });
+      Object.keys(byMonth).sort().reverse().slice(0,GD_BACKUP_MONTHLY_KEEP).forEach(function(ym){keepIds[byMonth[ym].id]=true;});
+      files.forEach(function(f){
+        if(!keepIds[f.id])gapi.client.drive.files.delete({fileId:f.id}).catch(function(){});
       });
     }).catch(function(){});
   });
@@ -2512,7 +2532,7 @@ function renderExport(){
       S._lastSyncCount=totalRecords;
       lsSet("last_sync_time",S._lastSyncTime);
       lsSet("last_sync_count",S._lastSyncCount);
-      pruneOldGDriveBackups(6);
+      pruneOldGDriveBackups(GD_BACKUP_RECENT_KEEP);
       render();
     });
   }},"☁️ 同步至 Google 雲端"));
@@ -2763,7 +2783,7 @@ function autoSyncBackup(){
     S._lastSyncCount=autoTotal;
     lsSet("last_sync_time",S._lastSyncTime);
     lsSet("last_sync_count",S._lastSyncCount);
-    pruneOldGDriveBackups(6);
+    pruneOldGDriveBackups(GD_BACKUP_RECENT_KEEP);
     notify("✅ 已自動同步備份至 Google 雲端");
     render(); // 更新顯示的同步時間
   });
