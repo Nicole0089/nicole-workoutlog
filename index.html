@@ -2218,19 +2218,39 @@ function renderChart(){
     }
     tgtRow.appendChild(tgtBox);
     chartCard.appendChild(tgtRow);
-    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.weight!=null;}).map(function(d){return{date:d.date,value:d.weight};}),"#2563eb","kg",S.bodyTargetWeight));
+    var wtData=S.bodyData.filter(function(d){return d.weight!=null;}).map(function(d){return{date:d.date,value:d.weight};});
+    wtData.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+    if(wtData.length>15)wtData=wtData.slice(-15);
+    var wtChartW=Math.max(360,44+14+(wtData.length-1)*32);
+    chartCard.appendChild(makeSVGChart(wtData,"#2563eb","kg",S.bodyTargetWeight,true,wtChartW));
   } else if(S.chartType==="bodyfat"){
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"體脂趨勢（%）"));
-    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.fat!=null;}).map(function(d){return{date:d.date,value:d.fat};}),"#7c3aed","%"));
+    var fatData=S.bodyData.filter(function(d){return d.fat!=null;}).map(function(d){return{date:d.date,value:d.fat};});
+    fatData.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+    if(fatData.length>15)fatData=fatData.slice(-15);
+    var fatChartW=Math.max(360,44+14+(fatData.length-1)*32);
+    chartCard.appendChild(makeSVGChart(fatData,"#7c3aed","%",null,true,fatChartW));
   } else if(S.chartType==="muscle"){
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"骨骼肌趨勢（%）"));
-    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.muscle!=null;}).map(function(d){return{date:d.date,value:d.muscle};}),"#059669","%"));
+    var muscleData=S.bodyData.filter(function(d){return d.muscle!=null;}).map(function(d){return{date:d.date,value:d.muscle};});
+    muscleData.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+    if(muscleData.length>15)muscleData=muscleData.slice(-15);
+    var muscleChartW=Math.max(360,44+14+(muscleData.length-1)*32);
+    chartCard.appendChild(makeSVGChart(muscleData,"#059669","%",null,true,muscleChartW));
   } else if(S.chartType==="waist"){
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"腰圍趨勢（cm）"));
-    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.waist!=null;}).map(function(d){return{date:d.date,value:d.waist};}),"#059669","cm"));
+    var waistData=S.bodyData.filter(function(d){return d.waist!=null;}).map(function(d){return{date:d.date,value:d.waist};});
+    waistData.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+    if(waistData.length>15)waistData=waistData.slice(-15);
+    var waistChartW=Math.max(360,44+14+(waistData.length-1)*32);
+    chartCard.appendChild(makeSVGChart(waistData,"#059669","cm",null,true,waistChartW));
   } else if(S.chartType==="hip"){
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"8px",fontSize:"14px"}},"臀圍趨勢（cm）"));
-    chartCard.appendChild(makeSVGChart(S.bodyData.filter(function(d){return d.hip!=null;}).map(function(d){return{date:d.date,value:d.hip};}),"#d97706","cm"));
+    var hipData=S.bodyData.filter(function(d){return d.hip!=null;}).map(function(d){return{date:d.date,value:d.hip};});
+    hipData.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+    if(hipData.length>15)hipData=hipData.slice(-15);
+    var hipChartW=Math.max(360,44+14+(hipData.length-1)*32);
+    chartCard.appendChild(makeSVGChart(hipData,"#d97706","cm",null,true,hipChartW));
   } else if(S.chartType==="volume"){
     // 週訓練次數長條圖
     chartCard.appendChild(el("div",{style:{fontWeight:700,marginBottom:"4px",fontSize:"14px"}},"每週訓練次數"));
@@ -2410,7 +2430,22 @@ function makeSVGChart(data,color,label,targetVal,showDate,chartWidth){
   if(W>360){
     var scrollWrap=el("div",{style:{overflowX:"auto",WebkitOverflowScrolling:"touch",paddingBottom:"4px"}});
     scrollWrap.appendChild(svg);
-    return scrollWrap;
+    // 固定Y軸：疊加一個不隨橫向捲動移動的小SVG，只重繪左側格線數值文字並蓋住背景，
+    // 讓使用者左右滑動看不同時間區段的資料點時，左側的數值刻度視覺上維持固定不動。
+    // 寬度取padL-6（與原本文字x座標=padL-6、text-anchor:end的位置完全對齊），
+    // 剛好落在資料點(x=padL起)與其點擊熱區(半徑11，最左到padL-11)之外，不會遮到任何實際圖表內容。
+    var axisW=padL-6;
+    var axisSvg=s("svg",{viewBox:"0 0 "+axisW+" "+H,style:"position:absolute;left:0;top:0;width:"+axisW+"px;height:"+H+"px;pointer-events:none"});
+    axisSvg.appendChild(s("rect",{x:"0",y:"0",width:axisW,height:H,fill:S.darkMode?"#1f2937":"#fff"}));
+    [0,0.25,0.5,0.75,1].forEach(function(r){
+      var gy=padT+r*availH;
+      var gv=max-r*range;
+      axisSvg.appendChild(s("text",{x:axisW,y:gy+3,"font-size":"9",fill:"#9ca3af","text-anchor":"end"},fmtNum(gv)+((r===0||r===1)?label:"")));
+    });
+    var outer=el("div",{style:{position:"relative"}});
+    outer.appendChild(scrollWrap);
+    outer.appendChild(axisSvg);
+    return outer;
   }
   return svg;
 }
